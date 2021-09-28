@@ -7,7 +7,7 @@ Changes to 'old' pmwg:
 
 3) Parallelized creating the conditional multivariate normal
 
-4) Started scaling epsilon adaptively to meet a certain set acceptance rate: pstart. 
+4) Started scaling epsilon adaptively to meet a certain set acceptance rate: pstar. 
 Taken from: Garthwaite, P. H., Fan, Y., & Sisson, S. A. (2016). Adaptive optimal scaling of Metropolis–Hastings algorithms using the Robbins–Monro process. Communications in Statistics-Theory and Methods, 45(17), 5098-5111.
 
 This scaling was done to set the acceptance rate for every subject. 
@@ -40,5 +40,7 @@ it will not scale epsilon at all, and keep it at it's heuristic or predefined va
 for burn-in that would be the init epsilon, and for adaptation this would be burn-in epsilon etc.. This makes sure that when
 pstar is set for stage A, but not for stage B, the epsilon that resulted from flexibly adjusting in stage A is carried over to
 stage B, but then no longer adjusted flexibly. 
+- pmwgs object now also stores epsilon values
+- pmwgs object now also stores accepted particle origins
 
 Overall speed-up of 2,3,6 is very roughly estimated around 5%
