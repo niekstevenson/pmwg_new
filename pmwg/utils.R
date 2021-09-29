@@ -226,6 +226,17 @@ last_sample <- function(store) {
   )
 }
 
+numbers_from_proportion <- function(mix_proportion, num_particles = 1000) {
+  numbers <- stats::rbinom(n = 2, size = num_particles, prob = mix_proportion)
+  if (mix_proportion[3] == 0) {
+    numbers[3] <- 0
+    numbers[2] <- num_particles - numbers[1]
+  } else {
+    numbers[3] <- num_particles - sum(numbers)
+  }
+  numbers
+}
+
 accept_rate <- function(pmwgs, window_size = 200) {
   n_samples <- pmwgs$samples$idx
   if (is.null(n_samples) || n_samples < 3) {

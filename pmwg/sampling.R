@@ -46,7 +46,7 @@ init <- function(pmwgs, start_mu = NULL, start_sig = NULL,
 }
 
 start_proposals <- function(s, start_mu, start_sig, n_particles, pmwgs){
-  proposals <- mvtnorm::rmvnorm(n_particles, start_mu, start_sig)
+  proposals <- mvrnorm_arma(n_particles, start_mu, start_sig)
   colnames(proposals) <- rownames(pmwgs$samples$theta_mu) # preserve par names
   lw <- apply(proposals,1,pmwgs$ll_func,data = pmwgs$data[pmwgs$data$subject == pmwgs$subjects[s], ])
   weight <- exp(lw - max(lw))
@@ -84,14 +84,14 @@ gibbs_step <- function(sampler){
 
 new_particle <- function (s, data, num_particles, parameters, eff_mu = NULL, 
                           eff_sig2 = NULL, mix_proportion = c(0.5, 0.5, 0), 
-                          likelihood_func = NULL, epsilon = NULL, subjects = NULL) 
+                          likelihood_func = NULL, epsilon = NULL) 
 {
   eff_mu <- eff_mu[, s]
   eff_sig2 <- eff_sig2[, , s]
   mu <- parameters$tmu
   sig2 <- parameters$tsig
   subj_mu <- parameters$alpha[, s]
-  particle_numbers <- table(sample(1:3, size = num_particles, replace = T, prob = mix_proportion))
+  particle_numbers <- numbers_from_proportion(mix_proportion, num_particles)
   cumuNumbers <- cumsum(particle_numbers)
   pop_particles <- mvrnorm_arma(particle_numbers[1], mu, 
                                   sig2)
@@ -150,7 +150,6 @@ run_stage <- function(pmwgs,
   mix <- set_mix(stage, mix)
   # Set necessary local variables
   .n_unique <- n_unique
-  apply_fn <- lapply
   # Set stable (fixed) new_sample argument for this run
   n_pars <- length(pmwgs$par_names)
   
@@ -187,8 +186,6 @@ run_stage <- function(pmwgs,
     }
     # Create/update efficient proposal distribution if we are in sampling phase.
     if(stage == "sample" & (i %% pdist_update_n == 0 || i == 1)){
-      eff_mu <- array(dim = c(n_pars, sampler$n_subjects))
-      eff_sig2 <- array(dim = c(n_pars, n_pars, sampler$n_subjects))
       test_samples <- extract_samples(pmwgs, stage = c("adapt", "sample"))
       iteration <- dim(test_samples$theta_mu)[2]
       if(n_cores > 1){

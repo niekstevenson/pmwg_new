@@ -1,5 +1,5 @@
-matplot(t(burned$samples$epsilon), type = "l", ylab = "epsilon")
-samples <- burned$samples$alpha[1, ,]
+matplot(t(burned3$samples$epsilon), type = "l", ylab = "epsilon")
+samples <- burned3$samples$alpha[1, ,]
 accept <- apply(samples, 1, diff) != 0
 
 meanacc <- matrix(0, nrow = nrow(accept), ncol = ncol(accept))
