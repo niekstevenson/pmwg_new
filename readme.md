@@ -43,4 +43,6 @@ stage B, but then no longer adjusted flexibly.
 - pmwgs object now also stores epsilon values
 - pmwgs object now also stores accepted particle origins
 
+8) Added single subject estimation (non-hierarchical). Run with run_stage_single, no adaptation stage because we can't (reasonably) construct a conditional. Still very much built on the hierarchical architecture, so has quite a lot of code redundancy and storing redundancies. 
+
 Overall speed-up of 2,3,6 is very roughly estimated around 5%
