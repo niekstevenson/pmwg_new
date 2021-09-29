@@ -1,6 +1,6 @@
 rm(list = ls())
 library(rtdists)
-source("pmwg/sampling.R")
+source("pmwg/sampling_single.R")
 
 log_likelihood=function(x,data,sample=TRUE) {
   x=exp(x)
@@ -109,8 +109,6 @@ lba_loglike <- function(x, data, sample = FALSE) {
   if (!sample){return(out)}
 }
 
-
-source("pmwg/samplingSingle.R")
 sampler <- pmwgs(
   data = data,
   pars = pars,
