@@ -26,7 +26,8 @@ init <- function(pmwgs, start_mu = NULL, start_sig = NULL,
   alpha <- array(NA, dim = c(pmwgs$n_pars, pmwgs$n_subjects))
   likelihoods <- array(NA_real_, dim = c(pmwgs$n_subjects))
   if(n_cores > 1){
-    proposals <- mclapply(X=1:pmwgs$n_subjects,FUN=start_proposals,start_mu, start_sig, particles, pmwgs, mc.cores = n_cores)
+    proposals <- mclapply(X=1:pmwgs$n_subjects,FUN=start_proposals,start_mu = start_mu, 
+                        start_sig = start_sig, n_particles = particles, pmwgs = pmwgs, mc.cores = n_cores)
   } else{
     proposals <- lapply(X=1:pmwgs$n_subjects,FUN=start_proposals,start_mu = start_mu, 
                start_sig = start_sig, n_particles = particles, pmwgs = pmwgs)

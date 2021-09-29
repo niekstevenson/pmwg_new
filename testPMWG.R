@@ -110,16 +110,13 @@ lba_loglike <- function(x, data, sample = FALSE) {
 }
 
 
-source("samplingSingleV2.R")
+source("pmwg/samplingSingle.R")
 sampler <- pmwgs(
   data = data,
   pars = pars,
   prior = priors,
   ll_func = lba_loglike
 )
-sampler <- init(sampler, n_cores = 1) # i don't use any start points here
+sampler <- init_single(sampler, n_cores = 1) # i don't use any start points here
 # Sample! -------------------------------------------------------------------
-debug(new_particle_single)
-burned3 <- run_stage(sampler, stage = "burn",iter = 1000, particles = 100, n_cores = 16, pstar = .7)
-adapted <- run_stage(burned, stage = "adapt", iter = 5000, particles = 100, n_cores = 16, pstar =.6)
-sampled <- run_stage(adapted, stage = "sample", iter = 2500, particles = 100, n_cores = 16, pstar = .6)
+burned <- run_stage_single(sampler, stage = "burn",iter = 1000, particles = 100, n_cores = 16, pstar = .7)
