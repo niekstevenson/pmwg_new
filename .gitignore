@@ -4,7 +4,7 @@
 .Ruserdata
 *.sh
 *.Rproj
-samples
+samples/
 
 
 
