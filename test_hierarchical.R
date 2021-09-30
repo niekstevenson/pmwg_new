@@ -118,5 +118,5 @@ sampler <- pmwgs(
 sampler <- init(sampler, n_cores = 1) # i don't use any start points here
 # Sample! -------------------------------------------------------------------
 burned <- run_stage(sampler, stage = "burn",iter = 1000, particles = 100, n_cores = 16, pstar = .7)
-adapted <- run_stage(burned, stage = "adapt", iter = 5000, particles = 100, n_cores = 16, pstar =.6)
+adapted <- run_stage(burned, stage = "adapt", iter = 100, particles = 100, n_cores = 16, pstar =.4)
 sampled <- run_stage(adapted, stage = "sample", iter = 2500, particles = 100, n_cores = 16, pstar = .6)

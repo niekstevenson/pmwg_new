@@ -1,7 +1,6 @@
 rm(list = ls())
-setwd("~/pmwg_new/")
 source("pmwg/sampling.R")
-
+library(rtdists)
 
 joint_ll <- function(x, data){
   parPreFixs <- gsub("[|].*", "", names(x))

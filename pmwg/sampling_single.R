@@ -13,8 +13,16 @@ source("pmwg/messaging.R")
 sourceCpp("pmwg/utilityFunctions.cpp")
 
 init_single <- function(pmwgs, start_mu = NULL, start_sig = NULL,
-                        display_progress = TRUE, particles = 1000, n_cores = 1, epsilon = NULL) {
+                        display_progress = TRUE, particles = 1000, n_cores = 1, epsilon = NULL, useC = T) {
   # Create and fill initial random effects for each subject
+  if(useC){
+    sourceCpp("pmwg/utilityFunctions.cpp")
+    rmv <<- mvrnorm_arma
+    dmv <<- dmvnrm_arma_fast
+  } else{
+    rmv <<- mvtnorm::rmvnorm
+    dmv <<- mvtnorm::dmvnorm
+  }
   alpha <- array(NA, dim = c(pmwgs$n_pars, pmwgs$n_subjects))
   likelihoods <- array(NA_real_, dim = c(pmwgs$n_subjects))
   if(n_cores > 1){
@@ -34,7 +42,7 @@ init_single <- function(pmwgs, start_mu = NULL, start_sig = NULL,
 }
 
 start_proposals <- function(s, start_mu, start_sig, n_particles, pmwgs){
-  proposals <- mvtnorm::rmvnorm(n_particles, start_mu, start_sig)
+  proposals <- particle_draws(n_particles, start_mu, start_sig)
   colnames(proposals) <- rownames(pmwgs$samples$theta_mu) # preserve par names
   lw <- apply(proposals,1,pmwgs$ll_func,data = pmwgs$data[pmwgs$data$subject == pmwgs$subjects[s], ])
   weight <- exp(lw - max(lw))
@@ -49,17 +57,17 @@ new_particle_single <- function (s, data, num_particles, prior_mu, prior_sig2, a
   particle_numbers <- stats::rbinom(n = 2, size = num_particles, prob = mix_proportion)
   particle_numbers[2] <- num_particles - particle_numbers[1]
   cumuNumbers <- cumsum(particle_numbers)
-  pop_particles <- mvrnorm_arma(particle_numbers[1], prior_mu, 
+  pop_particles <- particle_draws(particle_numbers[1], prior_mu, 
                                 prior_sig2)
-  ind_particles <- mvrnorm_arma(particle_numbers[2], subj_mu, 
+  ind_particles <- particle_draws(particle_numbers[2], subj_mu, 
                                 prior_sig2 * epsilon[s]^2)
   proposals <- rbind(pop_particles, ind_particles)
   colnames(proposals) <- names(subj_mu)
   proposals[1, ] <- subj_mu
   lw <- apply(proposals, 1, likelihood_func, data = data[data$subject==s,])
-  lp <- dmvnrm_arma_fast(x = proposals, mean = prior_mu, sigma = prior_sig2, 
+  lp <- dmv(x = proposals, mean = prior_mu, sigma = prior_sig2, 
                          log = TRUE)
-  prop_density <- dmvnrm_arma_fast(x = proposals, mean = subj_mu, 
+  prop_density <- dmv(x = proposals, mean = subj_mu, 
                                    sigma = prior_sig2 * (epsilon[s]^2))
   
   lm <- log(mix_proportion[1] * exp(lp) + (mix_proportion[2] * prop_density))
@@ -76,15 +84,23 @@ run_stage_single <- function(pmwgs,
                              particles = 1000,
                              display_progress = TRUE,
                              n_cores = 1,
-                             n_unique = ifelse(stage == "adapt", 20, NA),
                              epsilon = NULL,
                              pstar = NULL,
                              mix = NULL,
-                             pdist_update_n = ifelse(stage == "sample", 500, NA)) {
+                             useC = T) {
   # Set defaults for NULL values
   mix <- c(0.05, 0.95)
   # Set stable (fixed) new_sample argument for this run
   n_pars <- length(pmwgs$par_names)
+  
+  if(useC){
+    sourceCpp("pmwg/utilityFunctions.cpp")
+    rmv <<- mvrnorm_arma
+    dmv <<- dmvnrm_arma_fast
+  } else{
+    rmv <<- mvtnorm::rmvnorm
+    dmv <<- mvtnorm::dmvnorm
+  }
   
   # Display stage to screen
   msgs <- list(
@@ -153,4 +169,12 @@ update.epsilon<- function(epsilon2, acc, p, i, d, alpha) {
   Theta=Theta+c*(acc-p)/max(200, i/d)
   return(exp(Theta))
 }
+
+particle_draws <- function(n, mu, covar) {
+  if (n <= 0) {
+    return(NULL)
+  }
+  rmv(n, mu, covar)
+}
+
 

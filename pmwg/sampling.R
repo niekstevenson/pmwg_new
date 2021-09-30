@@ -13,13 +13,23 @@ source("pmwg/messaging.R")
 sourceCpp("pmwg/utilityFunctions.cpp")
 
 init <- function(pmwgs, start_mu = NULL, start_sig = NULL,
-         display_progress = TRUE, particles = 1000, n_cores = 1, epsilon = NULL) {
+         display_progress = TRUE, particles = 1000, n_cores = 1, epsilon = NULL, useC = T) {
   # If no starting point for group mean just use zeros
   if (is.null(start_mu)) start_mu <- stats::rnorm(pmwgs$n_pars, sd = 1)
   # If no starting point for group var just sample from inverse wishart
   if (is.null(start_sig)) {
     start_sig <- MCMCpack::riwish(pmwgs$n_pars * 3,diag(pmwgs$n_pars))
   }
+  
+  if(useC){
+    sourceCpp("pmwg/utilityFunctions.cpp")
+    rmv <<- mvrnorm_arma
+    dmv <<- dmvnrm_arma_fast
+  } else{
+    rmv <<- mvtnorm::rmvnorm
+    dmv <<- mvtnorm::dmvnorm
+  }
+  
   # Sample the mixture variables' initial values.
   a_half <- 1 / stats::rgamma(n = pmwgs$n_pars, shape = 0.5, scale = 1)
   # Create and fill initial random effects for each subject
@@ -47,7 +57,7 @@ init <- function(pmwgs, start_mu = NULL, start_sig = NULL,
 }
 
 start_proposals <- function(s, start_mu, start_sig, n_particles, pmwgs){
-  proposals <- mvrnorm_arma(n_particles, start_mu, start_sig)
+  proposals <- particle_draws(n_particles, start_mu, start_sig)
   colnames(proposals) <- rownames(pmwgs$samples$theta_mu) # preserve par names
   lw <- apply(proposals,1,pmwgs$ll_func,data = pmwgs$data[pmwgs$data$subject == pmwgs$subjects[s], ])
   weight <- exp(lw - max(lw))
@@ -94,28 +104,28 @@ new_particle <- function (s, data, num_particles, parameters, eff_mu = NULL,
   subj_mu <- parameters$alpha[, s]
   particle_numbers <- numbers_from_proportion(mix_proportion, num_particles)
   cumuNumbers <- cumsum(particle_numbers)
-  pop_particles <- mvrnorm_arma(particle_numbers[1], mu, 
+  pop_particles <- particle_draws(particle_numbers[1], mu, 
                                   sig2)
-  ind_particles <- mvrnorm_arma(particle_numbers[2], subj_mu, 
+  ind_particles <- particle_draws(particle_numbers[2], subj_mu, 
                                   sig2 * epsilon[s]^2)
   if(mix_proportion[3] == 0){
     eff_particles <- NULL
   } else{
-    eff_particles <- mvrnorm_arma(particle_numbers[3], eff_mu, eff_sig2)
+    eff_particles <- particle_draws(particle_numbers[3], eff_mu, eff_sig2)
   }
   proposals <- rbind(pop_particles, ind_particles, eff_particles)
   colnames(proposals) <- names(mu)
   proposals[1, ] <- subj_mu
   lw <- apply(proposals, 1, likelihood_func, data = data[data$subject==s,])
-  lp <- dmvnrm_arma_fast(x = proposals, mean = mu, sigma = sig2, 
+  lp <- dmv(x = proposals, mean = mu, sigma = sig2, 
                          log = TRUE)
-  prop_density <- dmvnrm_arma_fast(x = proposals, mean = subj_mu, 
+  prop_density <- dmv(x = proposals, mean = subj_mu, 
                                    sigma = sig2 * (epsilon[s]^2))
   if (mix_proportion[3] == 0) {
     eff_density <- 0
   }
   else {
-    eff_density <- dmvnrm_arma_fast(x = proposals, mean = eff_mu, sigma = eff_sig2)
+    eff_density <- dmv(x = proposals, mean = eff_mu, sigma = eff_sig2)
   }
   lm <- log(mix_proportion[1] * exp(lp) + (mix_proportion[2] * 
                                              prop_density) + (mix_proportion[3] * eff_density))
@@ -204,7 +214,7 @@ run_stage <- function(pmwgs,
     pars <- gibbs_step(pmwgs)
     if(n_cores > 1){
       proposals=mclapply(X=1:pmwgs$n_subjects,FUN = new_particle, data, particles, pars, eff_mu, 
-                   eff_sig2, mix, pmwgs$ll_func, epsilon, mc.cores =n_cores)
+                   eff_sig2, mix, pmwgs$ll_func, epsilon, mc.cores =n_cores, mc.cleanup = T)
     } else{
       proposals=lapply(X=1:pmwgs$n_subjects, FUN = new_particle, data, particles, pars, eff_mu, 
                  eff_sig2, mix, pmwgs$ll_func, epsilon)
@@ -301,4 +311,11 @@ test_sampler_adapted <- function(pmwgs, n_unique, i, n_cores) {
     }
   }
   return("continue")
+}
+
+particle_draws <- function(n, mu, covar) {
+  if (n <= 0) {
+    return(NULL)
+  }
+  rmv(n, mu, covar)
 }
