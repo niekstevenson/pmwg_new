@@ -36,11 +36,9 @@ fitSims <- function(df, pars, var, n.subj){
   
   # Sample! -------------------------------------------------------------------
   save(sampler, file = paste0("./samples/LBA_", n.subj, "subs_", n.exp, "tasks_.RData"))
-  burned <- run_stage(sampler, stage = "burn",iter = 2000, particles = 100, n_cores =48, pstar = .6)
+  burned <- run_stage(sampler, stage = "burn",iter = 1500, particles = 100, n_cores =48, pstar = .6)
   save(burned, file = paste0("./samples/LBA_", n.subj, "subs_", n.exp, "tasks_.RData"))
-  epsilon <- burned$epsilon[length(burned$epsilon)]
   adapted <- run_stage(burned, stage = "adapt", iter = 5000, particles = 100, n_cores = 48, pstar = .6)
-  epsilon <- adapted$epsilon[length(adapted$epsilon)]
   sampled <- run_stage(adapted, stage = "sample", iter = 1000, particles = 100, n_cores = 48, pstar = .6)
   save(sampled, file = paste0("./samples/LBA_", n.subj, "subs_", n.exp, "tasks_.RData"))
 }
@@ -62,10 +60,10 @@ log_likelihood=function(x,data, sample=TRUE) {
 }
 
 
-n.trials <- 100      #number trials per subject per conditions
-n.subj <- 15 #number of subjects
+n.trials <- 75      #number trials per subject per conditions
+n.subj <- 5 #number of subjects
 n.cond <- 3
-n.exp <- 4
+n.exp <- 1
 
 allparameters <- numeric()
 alldata <- list()

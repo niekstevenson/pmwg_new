@@ -291,14 +291,14 @@ test_sampler_adapted <- function(pmwgs, n_unique, i, n_cores) {
   if (all(n_unique_sub > n_unique)) {
     message("Enough unique values detected: ", n_unique)
     message("Testing proposal distribution creation")
-    attempt <- try({
+    attempt <- tryCatch({
       if(n_cores > 1){
         mclapply(X = 1:pmwgs$n_subjects,FUN = get_conditionals,samples = test_samples, n_pars, i, mc.cores = n_cores)
       } else{
         lapply(X = 1:pmwgs$n_subjects,FUN = get_conditionals,samples = test_samples, n_pars, i)
       }
-    })
-    if (class(attempt) == "try-error") {
+    },error=function(e) e, warning=function(w) w)
+    if (any(class(attempt) %in% "warning")) {
       warning("An problem was encountered creating proposal distribution")
       warning("Increasing required unique values and continuing adaptation")
       return("increase")
