@@ -10,8 +10,6 @@ library(Rcpp)
 source("pmwg/utils.R")
 source("pmwg/messaging.R")
 
-sourceCpp("pmwg/utilityFunctions.cpp")
-
 init <- function(pmwgs, start_mu = NULL, start_sig = NULL,
          display_progress = TRUE, particles = 1000, n_cores = 1, epsilon = NULL, useC = T) {
   # If no starting point for group mean just use zeros

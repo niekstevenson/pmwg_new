@@ -10,8 +10,6 @@ library(Rcpp)
 source("pmwg/utils.R")
 source("pmwg/messaging.R")
 
-sourceCpp("pmwg/utilityFunctions.cpp")
-
 init_single <- function(pmwgs, start_mu = NULL, start_sig = NULL,
                         display_progress = TRUE, particles = 1000, n_cores = 1, epsilon = NULL, useC = T) {
   # Create and fill initial random effects for each subject
@@ -92,15 +90,6 @@ run_stage_single <- function(pmwgs,
   mix <- c(0.05, 0.95)
   # Set stable (fixed) new_sample argument for this run
   n_pars <- length(pmwgs$par_names)
-  
-  if(useC){
-    sourceCpp("pmwg/utilityFunctions.cpp")
-    rmv <<- mvrnorm_arma
-    dmv <<- dmvnrm_arma_fast
-  } else{
-    rmv <<- mvtnorm::rmvnorm
-    dmv <<- mvtnorm::dmvnorm
-  }
   
   # Display stage to screen
   msgs <- list(

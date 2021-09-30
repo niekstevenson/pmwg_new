@@ -1,4 +1,5 @@
 rm(list = ls())
+setwd("~/pmwg_new/")
 source("pmwg/sampling.R")
 library(rtdists)
 
@@ -139,5 +140,4 @@ for(i in 1:n.exp){
 }
 
 pars <- rownames(subj_random_effects)
-debug(fitSims)
 fitSims(df, pars, 1, n.subj)
