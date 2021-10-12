@@ -45,4 +45,8 @@ stage B, but then no longer adjusted flexibly.
 
 8) Added single subject estimation (non-hierarchical). Run with run_stage_single, no adaptation stage because we can't (reasonably) construct a conditional. Still very much built on the hierarchical architecture, so has quite a lot of code redundancy and storing redundancies. 
 
+9) Fixed a mistake that was in the old pmwg in the inverse gamma mixing weights a_half
+
+10) Added diagonal only estimation of the covariance matrix, so variances only. With new Gibbs step and priors. 
+
 Overall speed-up of 2,3,6 is very roughly estimated around 5%
