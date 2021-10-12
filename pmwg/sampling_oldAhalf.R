@@ -92,7 +92,7 @@ gibbs_step <- function(sampler){
   
   # Sample new mixing weights.
   a_half <- 1 / stats::rgamma(n = sampler$n_pars,shape = hyper$v_shape,
-                              rate = hyper$v_half * diag(tsinv) + hyper$A_half)
+                              rate = hyper$v_half + diag(tsinv) + hyper$A_half)
   return(list(tmu = tmu,tsig = tsig,tsinv = tsinv,a_half = a_half,alpha = last$alpha))
 }
 

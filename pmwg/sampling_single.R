@@ -21,7 +21,6 @@ init_single <- function(pmwgs, start_mu = NULL, start_sig = NULL,
     rmv <<- mvtnorm::rmvnorm
     dmv <<- mvtnorm::dmvnorm
   }
-  alpha <- array(NA, dim = c(pmwgs$n_pars, pmwgs$n_subjects))
   likelihoods <- array(NA_real_, dim = c(pmwgs$n_subjects))
   if(n_cores > 1){
     proposals <- mclapply(X=1:pmwgs$n_subjects,FUN=start_proposals, pmwgs$prior$theta_mu_mean, pmwgs$prior$theta_mu_var, 

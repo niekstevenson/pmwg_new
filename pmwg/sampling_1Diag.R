@@ -10,14 +10,51 @@ library(Rcpp)
 source("pmwg/utils.R")
 source("pmwg/messaging.R")
 
-init <- function(pmwgs, start_mu = NULL, start_sig = NULL,
-         display_progress = TRUE, particles = 1000, n_cores = 1, epsilon = NULL, useC = T) {
-  # If no starting point for group mean just use zeros
-  if (is.null(start_mu)) start_mu <- stats::rnorm(pmwgs$n_pars, sd = 1)
-  # If no starting point for group var just sample from inverse wishart
-  if (is.null(start_sig)) {
-    start_sig <- MCMCpack::riwish(pmwgs$n_pars * 3,diag(pmwgs$n_pars))
+pmwgs <- function(data, pars, ll_func, prior = NULL) {
+  # Descriptives
+  n_pars <- length(pars)
+  subjects <- unique(data$subject)
+  n_subjects <- length(subjects)
+  # Tuning settings for the Gibbs steps
+  # Hyperparameters
+  v_half <- 2 # hyperparameter on Σ prior (Half-t degrees of freedom)
+  A_half <- 1 # hyperparameter on Σ prior (Half-t scale) #nolint
+  # k_alpha from Algorithm 3, 2(b)
+  k_half <- v_half + n_pars - 1 + n_subjects
+  # Inverse Gamma shape parameter, Algorithm 3, 2(c)
+  v_shape <- (v_half + n_pars) / 2
+  # Storage for the samples.
+  samples <- sample_store(pars, subjects)
+  # Checking and default priors
+  if (is.null(prior)) {
+    prior <- list(theta_mu_mean = rep(0, n_pars), theta_mu_var = rep(1, n_pars))
   }
+  # Things I save rather than re-compute inside the loops.
+  prior$theta_mu_invar <- 1/prior$theta_mu_var
+  
+  sampler <- list(
+    data = data,
+    par_names = pars,
+    n_pars = n_pars,
+    n_subjects = n_subjects,
+    subjects = subjects,
+    prior = prior,
+    ll_func = ll_func,
+    samples = samples,
+    init = FALSE
+  )
+  #Hyper parameters
+  attr(sampler, "v_half") <- v_half
+  attr(sampler, "A_half") <- A_half
+  attr(sampler, "k_half") <- k_half
+  attr(sampler, "v_shape") <- v_shape
+  class(sampler) <- "pmwgs"
+  sampler
+}
+
+
+init <- function(pmwgs, start_mu = NULL, start_sig = NULL,
+                 display_progress = TRUE, particles = 1000, n_cores = 1, epsilon = NULL, useC = T) {
   
   if(useC){
     sourceCpp("pmwg/utilityFunctions.cpp")
@@ -28,21 +65,29 @@ init <- function(pmwgs, start_mu = NULL, start_sig = NULL,
     dmv <<- mvtnorm::dmvnorm
   }
   
+  # If no starting point for group mean just use zeros
+  if (is.null(start_mu)) start_mu <- stats::rnorm(pmwgs$n_pars, sd = 1)
+  # If no starting point for group var just sample from inverse wishart
+  if (is.null(start_sig)) {
+    start_sig <- 1/rgamma(pmwgs$n_pars, 10, 5)
+  }
+  
   # Sample the mixture variables' initial values.
-  a_half <- 1 / stats::rgamma(n = pmwgs$n_pars, shape = 2, rate = 1)
+  a_half <- 1 / stats::rgamma(n = pmwgs$n_pars, shape = 0.5, rate = 1)
+  
   # Create and fill initial random effects for each subject
   likelihoods <- array(NA_real_, dim = c(pmwgs$n_subjects))
   if(n_cores > 1){
     proposals <- mclapply(X=1:pmwgs$n_subjects,FUN=start_proposals,start_mu = start_mu, 
-                        start_sig = start_sig, n_particles = particles, pmwgs = pmwgs, mc.cores = n_cores)
+                          start_sig = start_sig, n_particles = particles, pmwgs = pmwgs, mc.cores = n_cores)
   } else{
     proposals <- lapply(X=1:pmwgs$n_subjects,FUN=start_proposals,start_mu = start_mu, 
-               start_sig = start_sig, n_particles = particles, pmwgs = pmwgs)
+                        start_sig = start_sig, n_particles = particles, pmwgs = pmwgs)
   }
   proposals <- simplify2array(proposals)
   pmwgs$init <- TRUE
   pmwgs$samples$theta_mu[, 1] <- start_mu
-  pmwgs$samples$theta_sig[, , 1] <- start_sig
+  pmwgs$samples$theta_sig[, , 1] <- diag(start_sig)
   pmwgs$samples$alpha[, , 1] <- do.call(cbind, proposals[1,])
   pmwgs$samples$last_theta_sig_inv <- MASS::ginv(start_sig)
   pmwgs$samples$subj_ll[, 1] <- unlist(proposals[2,])
@@ -54,7 +99,7 @@ init <- function(pmwgs, start_mu = NULL, start_sig = NULL,
 }
 
 start_proposals <- function(s, start_mu, start_sig, n_particles, pmwgs){
-  proposals <- particle_draws(n_particles, start_mu, start_sig)
+  proposals <- particle_draws(n_particles, start_mu, diag(start_sig))
   colnames(proposals) <- rownames(pmwgs$samples$theta_mu) # preserve par names
   lw <- apply(proposals,1,pmwgs$ll_func,data = pmwgs$data[pmwgs$data$subject == pmwgs$subjects[s], ])
   weight <- exp(lw - max(lw))
@@ -62,48 +107,42 @@ start_proposals <- function(s, start_mu, start_sig, n_particles, pmwgs){
   return(list(proposal = proposals[idx,], ll = lw[idx]))
 }
 
+
 gibbs_step <- function(sampler){
   # Get single iter versions, tmu = theta_mu, tsig = theta_sig
   last <- last_sample(sampler$samples)
   hyper <- attributes(sampler)
   prior <- sampler$prior
   
-  #For factor stuff
-  #1. construct tsinv from Upside down v, and Psi
-  #Do the same blabla
   
-  # Here mu is group mean, so we are getting mean and variance
-  var_mu <- MASS::ginv(sampler$n_subjects * last$tsinv + prior$theta_mu_invar)
-  mean_mu <- as.vector(var_mu %*% (last$tsinv %*% apply(last$alpha, 1, sum) +
-                                     prior$theta_mu_invar %*% prior$theta_mu_mean))
-  chol_var_mu <- t(chol(var_mu)) # t() because I want lower triangle.
-  # New sample for mu.
-  tmu <- mvtnorm::rmvnorm(1, mean_mu, chol_var_mu %*% t(chol_var_mu))[1, ]
+  #Mu
+  var_mu = 1.0 / (sampler$n_subjects * last$tsinv + prior$theta_mu_invar)
+  mean_mu = var_mu * ((apply(last$alpha, 1, sum) * last$tsinv + prior$theta_mu_mean * prior$theta_mu_invar))
+  tmu <- rnorm(sampler$n_pars, mean_mu, sd = sqrt(var_mu))
   names(tmu) <- sampler$par_names
   
-  #Instead of doing all this we construct a new upside down V and Psi (linked to random effects)
-  
-  # New values for group var
-  theta_temp <- last$alpha - tmu
-  cov_temp <- (theta_temp) %*% (t(theta_temp))
-  B_half <- 2 * hyper$v_half * diag(1 / last$a_half) + cov_temp # nolint
-  tsig <- MCMCpack::riwish(hyper$k_half, B_half) # New sample for group variance
-  tsinv <- MASS::ginv(tsig)
-  
-  # Sample new mixing weights.
+  #InvGamma
+  # shape = hyper$shape + sampler$n_subjects / 2
+  # rate = hyper$rate + rowSums( (last$alpha-tmu)^2 ) / 2
+  # tsinv = rgamma(n=sampler$n_pars, shape=shape, rate=rate)
+  # tsig = 1/tsinv
+  tsinv = rgamma(n=sampler$n_pars, shape=hyper$v_half/2 + sampler$n_subjects/2, rate=hyper$v_half/last$a_half + 
+                   rowSums( (last$alpha-tmu)^2 ) / 2)
+  tsig = 1/tsinv
+  #Contrary to standard pmwg I use shape, rate for IG()
   a_half <- 1 / stats::rgamma(n = sampler$n_pars,shape = hyper$v_shape,
-                              rate = hyper$v_half * diag(tsinv) + hyper$A_half)
-  return(list(tmu = tmu,tsig = tsig,tsinv = tsinv,a_half = a_half,alpha = last$alpha))
+                              rate = hyper$v_half * tsinv + 1/hyper$A_half)
+  return(list(tmu = tmu,tsig = tsig,tsinv = tsinv, a_half = a_half, alpha = last$alpha))
 }
 
 new_particle <- function (s, data, num_particles, parameters, eff_mu = NULL, 
                           eff_sig2 = NULL, mix_proportion = c(0.5, 0.5, 0), 
-                          likelihood_func = NULL, epsilon = NULL, subjects) 
+                          likelihood_func = NULL, epsilon = NULL) 
 {
   eff_mu <- eff_mu[, s]
-  eff_sig2 <- eff_sig2[, , s]
+  eff_sig2 <- diag(eff_sig2[, , s])
   mu <- parameters$tmu
-  sig2 <- parameters$tsig
+  sig2 <- diag(parameters$tsig)
   subj_mu <- parameters$alpha[, s]
   particle_numbers <- numbers_from_proportion(mix_proportion, num_particles)
   cumuNumbers <- cumsum(particle_numbers)
@@ -119,11 +158,11 @@ new_particle <- function (s, data, num_particles, parameters, eff_mu = NULL,
   proposals <- rbind(pop_particles, ind_particles, eff_particles)
   colnames(proposals) <- names(mu)
   proposals[1, ] <- subj_mu
-  lw <- apply(proposals, 1, likelihood_func, data = data[data$subject==subjects[s],])
+  lw <- apply(proposals, 1, likelihood_func, data = data[data$subject==s,])
   lp <- dmv(x = proposals, mean = mu, sigma = sig2, 
-                         log = TRUE)
+            log = TRUE)
   prop_density <- dmv(x = proposals, mean = subj_mu, 
-                                   sigma = sig2 * (epsilon[s]^2))
+                      sigma = sig2 * (epsilon[s]^2))
   if (mix_proportion[3] == 0) {
     eff_density <- 0
   }
@@ -138,6 +177,7 @@ new_particle <- function (s, data, num_particles, parameters, eff_mu = NULL,
   origin <- min(which(idx <= cumuNumbers))
   return(list(proposal = proposals[idx, ], ll = lw[idx], origin = origin))
 }
+
 get_conditionals <- function(s, samples, n_pars, iteration){
   pts2_unwound <- apply(samples$theta_sig,3,unwind)
   all_samples <- rbind(samples$alpha[, s,],samples$theta_mu,pts2_unwound)
@@ -160,8 +200,7 @@ run_stage <- function(pmwgs,
                       pstar = NULL,
                       mix = NULL,
                       pdist_update_n = ifelse(stage == "sample", 500, NA),
-                      useC = T
-                      ) {
+                      useC = T) {
   # Set defaults for NULL values
   mix <- set_mix(stage, mix)
   # Set necessary local variables
@@ -203,7 +242,6 @@ run_stage <- function(pmwgs,
   eff_mu <- NULL
   eff_sig2 <- NULL
   data <- pmwgs$data
-  subjects <- pmwgs$subjects
   # Main iteration loop
   for (i in 1:iter) {
     accRate <- mean(accept_rate(pmwgs))
@@ -229,20 +267,20 @@ run_stage <- function(pmwgs,
     pars <- gibbs_step(pmwgs)
     if(n_cores > 1){
       proposals=mclapply(X=1:pmwgs$n_subjects,FUN = new_particle, data, particles, pars, eff_mu, 
-                   eff_sig2, mix, pmwgs$ll_func, epsilon, mc.cores =n_cores, mc.cleanup = T)
+                         eff_sig2, mix, pmwgs$ll_func, epsilon, mc.cores =n_cores, mc.cleanup = T)
     } else{
       proposals=lapply(X=1:pmwgs$n_subjects, FUN = new_particle, data, particles, pars, eff_mu, 
-                 eff_sig2, mix, pmwgs$ll_func, epsilon)
+                       eff_sig2, mix, pmwgs$ll_func, epsilon)
     }
     proposals <- simplify2array(proposals)
     alpha <- do.call(cbind, proposals[1,])
     ll <- unlist(proposals[2,])
     origin <- unlist(proposals[3,])
-
+    
     j <- start_iter + i
     
     pmwgs$samples$theta_mu[, j] <- pars$tmu
-    pmwgs$samples$theta_sig[, , j] <- pars$tsig
+    pmwgs$samples$theta_sig[, , j] <- diag(pars$tsig)
     pmwgs$samples$last_theta_sig_inv <- pars$tsinv
     pmwgs$samples$alpha[, , j] <- alpha
     pmwgs$samples$idx <- j

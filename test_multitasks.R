@@ -32,7 +32,7 @@ fitSims <- function(df, pars, var, n.subj){
     ll_func = joint_ll
   )
   # start the sampler ---------------------------------------------------------
-  sampler <- init(sampler, n_cores = 48) # i don't use any start points here
+  sampler <- init(sampler, n_cores = 48, useC = F) # i don't use any start points here
   
   # Sample! -------------------------------------------------------------------
   save(sampler, file = paste0("./samples/LBA_", n.subj, "subs_", n.exp, "tasks_.RData"))

@@ -18,7 +18,7 @@ pmwgs <- function(data, pars, ll_func, prior = NULL) {
     prior <- list(theta_mu_mean = rep(0, n_pars), theta_mu_var = diag(rep(1, n_pars)))
   }
   # Things I save rather than re-compute inside the loops.
-  prior$theta_mu_invar <- MASS::ginv(prior$theta_mu_var)
+  prior$theta_mu_invar <- MASS::ginv(prior$theta_mu_var) #Inverse of the matrix
   
   sampler <- list(
     data = data,
@@ -130,6 +130,7 @@ relabel_samples <- function(sampler, indices, from="burn", to="adapt") {
 
 
 as_mcmc <- function(sampler, selection = "theta_mu", filter = stages) {
+  stages <- c("burn", "adapt", "sample")
   if (all(filter %in% stages)) {
     filter <- which(sampler$samples$stage %in% filter)
   } else if (!all(filter %in% 1:sampler$samples$idx)) {
