@@ -1,45 +1,3 @@
-pmwgs <- function(data, pars, ll_func, prior = NULL) {
-  # Descriptives
-  n_pars <- length(pars)
-  subjects <- unique(data$subject)
-  n_subjects <- length(subjects)
-  # Tuning settings for the Gibbs steps
-  # Hyperparameters
-  v_half <- 2 # hyperparameter on Σ prior (Half-t degrees of freedom)
-  A_half <- 1 # hyperparameter on Σ prior (Half-t scale) #nolint
-  # k_alpha from Algorithm 3, 2(b)
-  k_half <- v_half + n_pars - 1 + n_subjects
-  # Inverse Gamma shape parameter, Algorithm 3, 2(c)
-  v_shape <- (v_half + n_pars) / 2
-  # Storage for the samples.
-  samples <- sample_store(pars, subjects)
-  # Checking and default priors
-  if (is.null(prior)) {
-    prior <- list(theta_mu_mean = rep(0, n_pars), theta_mu_var = diag(rep(1, n_pars)))
-  }
-  # Things I save rather than re-compute inside the loops.
-  prior$theta_mu_invar <- MASS::ginv(prior$theta_mu_var) #Inverse of the matrix
-  
-  sampler <- list(
-    data = data,
-    par_names = pars,
-    n_pars = n_pars,
-    n_subjects = n_subjects,
-    subjects = subjects,
-    prior = prior,
-    ll_func = ll_func,
-    samples = samples,
-    init = FALSE
-  )
-  #Hyper parameters
-  attr(sampler, "v_half") <- v_half
-  attr(sampler, "A_half") <- A_half
-  attr(sampler, "k_half") <- k_half
-  attr(sampler, "v_shape") <- v_shape
-  class(sampler) <- "pmwgs"
-  sampler
-}
-
 extract_samples <- function(sampler, stage = c("adapt", "sample")) {
   samples <- sampler$samples
   stage_filter <- samples$stage %in% stage
@@ -50,6 +8,20 @@ extract_samples <- function(sampler, stage = c("adapt", "sample")) {
     theta_sig = samples$theta_sig[, , stage_filter & sampled_filter],
     alpha = samples$alpha[, , stage_filter & sampled_filter]
   )
+}
+
+particle_draws <- function(n, mu, covar) {
+  if (n <= 0) {
+    return(NULL)
+  }
+  rmv(n, mu, covar)
+}
+
+update.epsilon<- function(epsilon2, acc, p, i, d, alpha) {
+  c=((1-1/d)*sqrt(2*pi)*exp(alpha^2/2)/(2*alpha) + 1/(d*p*(1-p)))
+  Theta=log(sqrt(epsilon2))
+  Theta=Theta+c*(acc-p)/max(200, i/d)
+  return(exp(Theta))
 }
 
 unwind <- function(var_matrix, ...) {

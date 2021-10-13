@@ -17,7 +17,7 @@ log_likelihood=function(x,data,sample=TRUE) {
 }
 
 n.trials = 75      #number trials per subject per conditions
-n.subj = 45        #number of subjects
+n.subj = 15        #number of subjects
 n.cond = 3          #number of conditions
 
 
@@ -62,7 +62,7 @@ pars <- rownames(subj_random_effects)
 
 priors <- list(
   theta_mu_mean = rep(0, length(pars)),
-  theta_mu_var = diag(rep(1, length(pars)))
+  theta_mu_var = rep(1, length(pars))
 )
 
 
@@ -115,8 +115,11 @@ sampler <- pmwgs(
   prior = priors,
   ll_func = lba_loglike
 )
+source("pmwg/sampling.R")
+
 sampler <- init(sampler, n_cores = 15) # i don't use any start points here
 # Sample! -------------------------------------------------------------------
 burned <- run_stage(sampler, stage = "burn",iter = 750, particles = 100, n_cores = 15, pstar = .7)
-adapted <- run_stage(burned, stage = "adapt", iter = 100, particles = 100, n_cores = 5, pstar =.4)
-sampled <- run_stage(adapted, stage = "sample", iter = 2500, particles = 100, n_cores = 5, pstar = .6)
+debug(get_conditionals_diag)
+adapted <- run_stage(burned, stage = "adapt", iter = 100, particles = 100, n_cores = 1, pstar =.4)
+sampled <- run_stage(adapted, stage = "sample", iter = 1000, particles = 100, n_cores = 15, pstar = .6)
