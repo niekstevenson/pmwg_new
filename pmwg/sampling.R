@@ -28,8 +28,11 @@ pmwgs <- function(data, pars, ll_func, prior = NULL) {
     prior <- list(theta_mu_mean = rep(0, n_pars), theta_mu_var = diag(rep(1, n_pars)))
   }
   # Things I save rather than re-compute inside the loops.
-  prior$theta_mu_invar <- MASS::ginv(prior$theta_mu_var) #Inverse of the matrix
-  
+  if(is.matrix(prior$theta_mu_var)){
+    prior$theta_mu_invar <- MASS::ginv(prior$theta_mu_var) #Inverse of the matrix
+  } else{
+    prior$theta_mu_invar <- 1/prior$theta_mu_var #Inverse of the matrix
+  }
   sampler <- list(
     data = data,
     par_names = pars,

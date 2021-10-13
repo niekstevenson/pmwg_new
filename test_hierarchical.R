@@ -115,7 +115,6 @@ sampler <- pmwgs(
   prior = priors,
   ll_func = lba_loglike
 )
-source("pmwg/sampling.R")
 
 sampler <- init(sampler, n_cores = 15) # i don't use any start points here
 # Sample! -------------------------------------------------------------------
