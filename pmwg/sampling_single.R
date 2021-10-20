@@ -140,7 +140,7 @@ run_stage_single <- function(pmwgs,
     
     if(!is.null(pstar)){
       if(j > n0){
-        acc <- pmwgs$samples$alpha[1,,j] != pmwgs$samples$alpha[1,,(j-1)]
+        acc <- alpha[1,] != pmwgs$samples$alpha[1,,(j-1)]
         epsilon<-update.epsilon(epsilon^2, acc, pstar, j, n_pars, alphaStar)
       }
     }

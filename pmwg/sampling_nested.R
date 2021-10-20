@@ -1,3 +1,4 @@
+library(matrixcalc)
 library(mvtnorm) ## For the multivariate normal.
 library(MASS) ## For matrix inverse.
 library(MCMCpack) #For inverse wishart
@@ -7,7 +8,8 @@ library(abind)
 library(checkmate)
 library(Rcpp)
 
-source("pmwg/utils.R")
+
+source("pmwg/utils_nested.R")
 source("pmwg/messaging.R")
 
 pmwgs <- function(data, pars, ll_func, prior = NULL) {
@@ -15,6 +17,9 @@ pmwgs <- function(data, pars, ll_func, prior = NULL) {
   # Descriptives
   n_pars <- length(pars)
   subjects <- unique(data$subject)
+  groups <- unique(data$group)
+  n_groups <- length(groups)
+  subjectgroups <- aggregate(group ~ subject, data, mean)[,2] #Doesn't work with lists or tibbles, should fix this later
   n_subjects <- length(subjects)
   # Tuning settings for the Gibbs steps
   # Hyperparameters
@@ -22,23 +27,23 @@ pmwgs <- function(data, pars, ll_func, prior = NULL) {
   A_half <- 1 # hyperparameter on Σ prior (Half-t scale) #nolint
   
   # Storage for the samples.
-  samples <- sample_store(pars, subjects)
+  samples <- sample_store(pars, subjects, groups)
   # Checking and default priors
   if (is.null(prior)) {
-    prior <- list(theta_mu_mean = rep(0, n_pars), theta_mu_var = diag(rep(1, n_pars)))
+    prior <- list(theta_mu_mean = rep(0, n_groups), theta_mu_var = diag(rep(1, n_groups)))
   }
   # Things I save rather than re-compute inside the loops.
-  if(is.matrix(prior$theta_mu_var)){
-    prior$theta_mu_invar <- MASS::ginv(prior$theta_mu_var) #Inverse of the matrix
-  } else{
-    prior$theta_mu_invar <- 1/prior$theta_mu_var #Inverse of the matrix
-  }
+  prior$theta_mu_invar <- MASS::ginv(prior$theta_mu_var) #Inverse of the matrix
+
   sampler <- list(
     data = data,
     par_names = pars,
     n_pars = n_pars,
     n_subjects = n_subjects,
     subjects = subjects,
+    groups = groups,
+    subjectgroups = subjectgroups,
+    n_groups = n_groups,
     prior = prior,
     ll_func = ll_func,
     samples = samples,
@@ -52,18 +57,17 @@ pmwgs <- function(data, pars, ll_func, prior = NULL) {
 }
 
 init <- function(pmwgs, start_mu = NULL, start_sig = NULL,
-         display_progress = TRUE, particles = 1000, n_cores = 1, epsilon = NULL, useC = T) {
+                 display_progress = TRUE, particles = 1000, n_cores = 1, epsilon = NULL, useC = T) {
   # Gets starting points for the mcmc process
   # If no starting point for group mean just use zeros
-  if (is.null(start_mu)) start_mu <- stats::rnorm(pmwgs$n_pars, sd = 1)
+  if (is.null(start_mu)){
+    start_mu <- stats::rnorm(pmwgs$n_pars, sd = 1)
+    start_mu_group <- stats::rnorm(pmwgs$n_pars, sd = 1)
+  }
   # If no starting point for group var just sample some
   if (is.null(start_sig)) {
-    #If prior on covariances is a vector, assume diagonal only, otherwise assume full cvs structure
-    if(is.matrix(pmwgs$prior$theta_mu_var)){
-      start_sig <- MCMCpack::riwish(pmwgs$n_pars * 3,diag(pmwgs$n_pars))
-    } else{
-      start_sig <- diag(1/rgamma(pmwgs$n_pars, 10, 5)) #But stupid maybe as startpoint
-    }
+    start_sig <- MCMCpack::riwish(pmwgs$n_pars * 3,diag(pmwgs$n_pars))
+    start_sig_group <- MCMCpack::riwish(pmwgs$n_pars * 3,diag(pmwgs$n_pars))
   }
   
   if(useC){
@@ -81,18 +85,24 @@ init <- function(pmwgs, start_mu = NULL, start_sig = NULL,
   likelihoods <- array(NA_real_, dim = c(pmwgs$n_subjects))
   if(n_cores > 1){
     proposals <- mclapply(X=1:pmwgs$n_subjects,FUN=start_proposals,start_mu = start_mu, 
-                        start_sig = start_sig, n_particles = particles, pmwgs = pmwgs, mc.cores = n_cores)
+                          start_sig = start_sig, n_particles = particles, pmwgs = pmwgs, mc.cores = n_cores)
   } else{
     proposals <- lapply(X=1:pmwgs$n_subjects,FUN=start_proposals,start_mu = start_mu, 
-               start_sig = start_sig, n_particles = particles, pmwgs = pmwgs)
+                        start_sig = start_sig, n_particles = particles, pmwgs = pmwgs)
   }
   proposals <- simplify2array(proposals)
   pmwgs$init <- TRUE
   pmwgs$samples$theta_mu[, 1] <- start_mu
   pmwgs$samples$theta_sig[, , 1] <- start_sig
+  pmwgs$samples$group_mu[,,1] <- start_mu
+  pmwgs$samples$group_sig[,,,1] <- start_sig_group
+  pmwgs$samples$theta_sig[, , 1] <- start_sig
   pmwgs$samples$alpha[, , 1] <- do.call(cbind, proposals[1,])
   pmwgs$samples$last_theta_sig_inv <- MASS::ginv(start_sig)
+  pmwgs$samples$last_group_sig_inv <-array(rep(MASS::ginv(start_sig), pmwgs$n_groups), 
+                                                 dim = c(pmwgs$n_pars, pmwgs$n_pars, pmwgs$n_groups))
   pmwgs$samples$subj_ll[, 1] <- unlist(proposals[2,])
+  pmwgs$samples$group_a_half[,,1] <- a_half
   pmwgs$samples$a_half[, 1] <- a_half
   pmwgs$samples$idx <- 1
   pmwgs$samples$epsilon[,1] <- rep(set_epsilon(pmwgs$n_pars, epsilon), pmwgs$n_subjects)
@@ -110,117 +120,111 @@ start_proposals <- function(s, start_mu, start_sig, n_particles, pmwgs){
   return(list(proposal = proposals[idx,], ll = lw[idx]))
 }
 
-gibbs_step_diag<- function(sampler){
-  # Gibbs step for diagonal only
-  # Get single iter versions, tmu = theta_mu, tsig = theta_sig
-  last <- last_sample(sampler$samples)
-  hyper <- attributes(sampler)
-  prior <- sampler$prior
-  
-  prior$theta_mu_invar <- diag(prior$theta_mu_invar)
-  last$tsinv <- diag(last$tsinv)
-  
-  #Mu
-  var_mu = 1.0 / (sampler$n_subjects * last$tsinv + prior$theta_mu_invar)
-  mean_mu = var_mu * ((apply(last$alpha, 1, sum) * last$tsinv + prior$theta_mu_mean * prior$theta_mu_invar))
-  tmu <- rnorm(sampler$n_pars, mean_mu, sd = sqrt(var_mu))
-  names(tmu) <- sampler$par_names
-  
-  #InvGamma alternative (probably inferior) prior
-  # shape = hyper$shape + sampler$n_subjects / 2
-  # rate = hyper$rate + rowSums( (last$alpha-tmu)^2 ) / 2
-  # tsinv = rgamma(n=sampler$n_pars, shape=shape, rate=rate)
-  # tsig = 1/tsinv
-  tsinv = rgamma(n=sampler$n_pars, shape=hyper$v_half/2 + sampler$n_subjects/2, rate=hyper$v_half/last$a_half + 
-                   rowSums( (last$alpha-tmu)^2 ) / 2)
-  tsig = 1/tsinv
-  #Contrary to standard pmwg I use shape, rate for IG()
-  a_half <- 1 / stats::rgamma(n = sampler$n_pars, shape = (hyper$v_half + sampler$n_pars) / 2,
-                              rate = hyper$v_half * tsinv + 1/hyper$A_half)
-  return(list(tmu = tmu, tsig = diag(tsig), tsinv = diag(tsinv), a_half = a_half, alpha = last$alpha))
-}
-
-gibbs_step_full <- function(sampler){
-  # Gibbs step for group means, with full covariance matrix estimation
+gibbs_step_pop <- function(sampler){
+  # Gibbs step for population means, with full covariance matrix estimation
   # tmu = theta_mu, tsig = theta_sig
-  last <- last_sample(sampler$samples)
+  last <- last_sample_nested(sampler$samples)
   hyper <- attributes(sampler)
   prior <- sampler$prior
   
-  # Here mu is group mean, so we are getting mean and variance
-  var_mu <- MASS::ginv(sampler$n_subjects * last$tsinv + prior$theta_mu_invar)
-  mean_mu <- as.vector(var_mu %*% (last$tsinv %*% apply(last$alpha, 1, sum) +
+  # Here mu is pop mean, so we are getting mean and variance
+  var_mu <- MASS::ginv(sampler$n_groups * last$tsinv + prior$theta_mu_invar)
+  mean_mu <- as.vector(var_mu %*% (last$tsinv %*% apply(last$group_mu, 1, sum) +
                                      prior$theta_mu_invar %*% prior$theta_mu_mean))
   chol_var_mu <- t(chol(var_mu)) # t() because I want lower triangle.
   # New sample for mu.
   tmu <- mvtnorm::rmvnorm(1, mean_mu, chol_var_mu %*% t(chol_var_mu))[1, ]
   names(tmu) <- sampler$par_names
   
-  # New values for group var
-  theta_temp <- last$alpha - tmu
+  # New values for pop var
+  theta_temp <- last$group_mu - tmu
   cov_temp <- (theta_temp) %*% (t(theta_temp))
   B_half <- 2 * hyper$v_half * diag(1 / last$a_half) + cov_temp # nolint
-  tsig <- MCMCpack::riwish(hyper$v_half + sampler$n_pars - 1 + sampler$n_subjects, B_half) # New sample for group variance
+  tsig <- MCMCpack::riwish(hyper$v_half + sampler$n_pars - 1 + sampler$n_groups, B_half) # New sample for group variance
   tsinv <- MASS::ginv(tsig)
   
   # Sample new mixing weights.
   a_half <- 1 / stats::rgamma(n = sampler$n_pars,shape = (hyper$v_half + sampler$n_pars) / 2,
                               rate = hyper$v_half * diag(tsinv) + hyper$A_half)
-  return(list(tmu = tmu,tsig = tsig,tsinv = tsinv,a_half = a_half,alpha = last$alpha))
+  return(list(tmu = tmu,tsig = tsig,tsinv = tsinv,a_half = a_half,group_mu = last$group_mu))
 }
 
-new_particle <- function (s, data, num_particles, parameters, eff_mu = NULL, 
+
+gibbs_step_group <- function(group, sampler){
+  # Gibbs step for group means, with full covariance matrix estimation
+  # tmu = theta_mu, tsig = theta_sig
+  last <- last_sample_group(sampler$samples, group)
+  hyper <- attributes(sampler)
+  idx <- sampler$subjectgroups == group
+  n_subjects <- sum(idx)
+  
+  # Here mu is group mean, so we are getting mean and variance
+  var_mu <- MASS::ginv(n_subjects * last$tsinv + last$theta_mu_invar)
+  mean_mu <- as.vector(var_mu %*% (last$tsinv %*% apply(last$alpha[,idx], 1, sum) +
+                                     last$theta_mu_invar %*% last$theta_mu_mean))
+  attempt <- tryCatch({
+    chol_var_mu <- t(chol(var_mu)) # t() because I want lower triangle.
+  },error=function(e) e, warning=function(w) w)
+  if (any(class(attempt) %in% "error")) {
+    save(var_mu, file = "var.RData")
+    browser()
+  }
+  # New sample for mu.
+  tmu <- mvtnorm::rmvnorm(1, mean_mu, chol_var_mu %*% t(chol_var_mu))[1, ]
+  names(tmu) <- sampler$par_names
+  
+  # New values for group var
+  theta_temp <- last$alpha[,idx] - tmu
+  cov_temp <- (theta_temp) %*% (t(theta_temp))
+  B_half <- 2 * hyper$v_half * diag(1 / last$a_half) + cov_temp # nolint
+  tsig <- MCMCpack::riwish(hyper$v_half + sampler$n_pars - 1 + n_subjects, B_half) # New sample for group variance
+  tsinv <- MASS::ginv(tsig)
+  
+  # Sample new mixing weights.
+  a_half <- 1 / stats::rgamma(n = sampler$n_pars, shape = (hyper$v_half + sampler$n_pars) / 2,
+                              rate = hyper$v_half * diag(tsinv) + hyper$A_half)
+  return(list(tmu = tmu,tsig = tsig,tsinv = tsinv,a_half = a_half, alpha = last$alpha))
+}
+
+
+new_particle <- function (s, data, num_particles, group_parameters, eff_mu = NULL, 
                           eff_sig2 = NULL, mix_proportion = c(0.5, 0.5, 0), 
-                          likelihood_func = NULL, epsilon = NULL, subjects) 
-{
+                          likelihood_func = NULL, epsilon = NULL, subjects, subjectgroups){
+  group_parameters <- group_parameters[[subjectgroups[s]]]
   eff_mu <- eff_mu[, s]
   eff_sig2 <- eff_sig2[, , s]
-  mu <- parameters$tmu
-  sig2 <- parameters$tsig
-  subj_mu <- parameters$alpha[, s]
+  group_mu <- group_parameters$tmu
+  group_sig2 <- group_parameters$tsig
+  subj_mu <- group_parameters$alpha[, s]
   particle_numbers <- numbers_from_proportion(mix_proportion, num_particles)
   cumuNumbers <- cumsum(particle_numbers)
-  pop_particles <- particle_draws(particle_numbers[1], mu, 
-                                  sig2)
+  group_particles <- particle_draws(particle_numbers[1], group_mu, 
+                                    group_sig2)
   ind_particles <- particle_draws(particle_numbers[2], subj_mu, 
-                                  sig2 * epsilon[s]^2)
+                                  group_sig2 * epsilon[s]^2)
   if(mix_proportion[3] == 0){
     eff_particles <- NULL
   } else{
     eff_particles <- particle_draws(particle_numbers[3], eff_mu, eff_sig2)
   }
-  proposals <- rbind(pop_particles, ind_particles, eff_particles)
-  colnames(proposals) <- names(mu)
+  proposals <- rbind(group_particles, ind_particles, eff_particles)
+  colnames(proposals) <- names(group_mu)
   proposals[1, ] <- subj_mu
   lw <- apply(proposals, 1, likelihood_func, data = data[data$subject==subjects[s],])
-  lp <- dmv(x = proposals, mean = mu, sigma = sig2, 
-                         log = TRUE)
-  prop_density <- dmv(x = proposals, mean = subj_mu, 
-                                   sigma = sig2 * (epsilon[s]^2))
+  lg <- dmv(x = proposals, mean = group_mu, sigma = group_sig2, log = TRUE)
+  prop_density <- dmv(x = proposals, mean = subj_mu, sigma = group_sig2 * (epsilon[s]^2))
   if (mix_proportion[3] == 0) {
     eff_density <- 0
   }
   else {
     eff_density <- dmv(x = proposals, mean = eff_mu, sigma = eff_sig2)
   }
-  lm <- log(mix_proportion[1] * exp(lp) + (mix_proportion[2] * 
-                                             prop_density) + (mix_proportion[3] * eff_density))
-  l <- lw + lp - lm
+  lm <- log(mix_proportion[1] * exp(lg) + mix_proportion[2] * prop_density + (mix_proportion[3] * eff_density))
+  l <- lw + lg - lm
   weights <- exp(l - max(l))
   idx <- sample(x = num_particles, size = 1, prob = weights)
   origin <- min(which(idx <= cumuNumbers))
   return(list(proposal = proposals[idx, ], ll = lw[idx], origin = origin))
-}
-
-get_conditionals_diag <- function(s, samples, n_pars, iteration){
-  pts2_unwound <- apply(samples$theta_sig,3,diag)
-  all_samples <- rbind(samples$alpha[, s,],samples$theta_mu,pts2_unwound)
-  mu_tilde <- apply(all_samples, 1, mean)
-  sigma_tilde <- stats::var(t(all_samples))
-  condmvn <- condMVNorm::condMVN(mean = mu_tilde, sigma = sigma_tilde,
-                                 dependent.ind = 1:n_pars, given.ind = (n_pars + 1):length(mu_tilde),
-                                 X.given = c(samples$theta_mu[,iteration], diag(samples$theta_sig[,,iteration])))
-  return(list(eff_mu = condmvn$condMean, eff_sig2 = condmvn$condVar))
 }
 
 get_conditionals_full <- function(s, samples, n_pars, iteration){
@@ -247,7 +251,7 @@ run_stage <- function(pmwgs,
                       diag_only = F,
                       pdist_update_n = ifelse(stage == "sample", 500, NA),
                       useC = T
-                      ) {
+) {
   # Set defaults for NULL values
   mix <- set_mix(stage, mix)
   # Set necessary local variables
@@ -262,14 +266,6 @@ run_stage <- function(pmwgs,
   } else{
     rmv <<- mvtnorm::rmvnorm
     dmv <<- mvtnorm::dmvnorm
-  }
-  
-  if(is.matrix(pmwgs$prior$theta_mu_var)){
-    gibbs_step <- gibbs_step_full
-    get_conditionals <- get_conditionals_full
-  } else{
-    gibbs_step <- gibbs_step_diag
-    get_conditionals <- get_conditionals_diag
   }
   
   # Display stage to screen
@@ -298,6 +294,8 @@ run_stage <- function(pmwgs,
   eff_sig2 <- NULL
   data <- pmwgs$data
   subjects <- pmwgs$subjects
+  subjectgroups <- pmwgs$subjectgroups
+  n_cores_group <- min(pmwgs$n_groups, n_cores)
   # Main iteration loop
   for (i in 1:iter) {
     accRate <- mean(accept_rate(pmwgs))
@@ -320,29 +318,43 @@ run_stage <- function(pmwgs,
       eff_sig2 <- abind(conditionals[2,], along = 3)
     }
     
-    pars <- gibbs_step(pmwgs)
-    if(n_cores > 1){
-      proposals=mclapply(X=1:pmwgs$n_subjects,FUN = new_particle, data, particles, pars, eff_mu, 
-                   eff_sig2, mix, pmwgs$ll_func, epsilon, subjects, mc.cores =n_cores, mc.cleanup = T)
+    pars_pop <- gibbs_step_pop(pmwgs)
+    if(n_cores_group > 50){
+      pars_group=mclapply(X=1:pmwgs$n_groups,FUN = gibbs_step_group, pmwgs, mc.cores =n_cores_group, mc.cleanup = T)
     } else{
-      proposals=lapply(X=1:pmwgs$n_subjects, FUN = new_particle, data, particles, pars, eff_mu, 
-                 eff_sig2, mix, pmwgs$ll_func, epsilon, subjects)
+      pars_group=lapply(X=1:pmwgs$n_groups,FUN = gibbs_step_group, pmwgs)
+    }
+    
+    if(n_cores > 1){
+      proposals=mclapply(X=1:pmwgs$n_subjects,FUN = new_particle, data, particles, pars_group, eff_mu, 
+                         eff_sig2, mix, pmwgs$ll_func, epsilon, subjects, subjectgroups, mc.cores =n_cores, mc.cleanup = T)
+    } else{
+      proposals=lapply(X=1:pmwgs$n_subjects, FUN = new_particle, data, particles, pars_group, eff_mu, 
+                       eff_sig2, mix, pmwgs$ll_func, epsilon, subjects, subjectgroups)
     }
     proposals <- simplify2array(proposals)
     alpha <- do.call(cbind, proposals[1,])
     ll <- unlist(proposals[2,])
     origin <- unlist(proposals[3,])
-
+    
+    pars_group <- simplify2array(pars_group)
+    
     j <- start_iter + i
     
-    pmwgs$samples$theta_mu[, j] <- pars$tmu
-    pmwgs$samples$theta_sig[, , j] <- pars$tsig
-    pmwgs$samples$last_theta_sig_inv <- pars$tsinv
+    pmwgs$samples$group_mu[,, j] <- do.call(cbind, pars_group[1,])
+    pmwgs$samples$group_sig[,,,j] <- abind(pars_group[2,], along = 3)
+    pmwgs$samples$last_group_sig_inv <- abind(pars_group[3,], along = 3)
+    pmwgs$samples$group_a_half[,, j] <- do.call(cbind, pars_group[4,])
+    
+    
+    pmwgs$samples$theta_mu[, j] <- pars_pop$tmu
+    pmwgs$samples$theta_sig[, , j] <- pars_pop$tsig
+    pmwgs$samples$last_theta_sig_inv <- pars_pop$tsinv
     pmwgs$samples$alpha[, , j] <- alpha
     pmwgs$samples$idx <- j
     pmwgs$samples$subj_ll[, j] <- ll
     pmwgs$samples$origin[,j] <- origin
-    pmwgs$samples$a_half[, j] <- pars$a_half
+    pmwgs$samples$a_half[, j] <- pars_pop$a_half
     
     if(!is.null(pstar)){
       if(j > n0){

@@ -2,9 +2,10 @@ rm(list = ls())
 library(rtdists)
 source("pmwg/sampling.R")
 
-log_likelihood=function(x,data,sample=TRUE) {
-  x=exp(x)
-  bs=x["A"]+x[c("b1","b2","b3")][data$condition]
+log_likelihood=function(x,data, sample=F) {
+  x <- exp(x)
+  bPars <- grep("b", names(x))
+  bs <- x["A"]+x[bPars][data$condition]
   if (sample) { #for sampling
     out=rLBA(n=nrow(data),A=x["A"],b=bs,t0=x["t0"],mean_v=x[c("v1","v2")],sd_v=c(1,1),distribution="norm",silent=TRUE)
   } else { #for calculating density
@@ -16,8 +17,8 @@ log_likelihood=function(x,data,sample=TRUE) {
   out
 }
 
-n.trials = 75      #number trials per subject per conditions
-n.subj = 15        #number of subjects
+n.trials = 75       #number trials per subject per conditions
+n.subj = 5          #number of subjects
 n.cond = 3          #number of conditions
 
 
@@ -65,60 +66,14 @@ priors <- list(
   theta_mu_var = rep(1, length(pars))
 )
 
-
-# Create the Particle Metropolis within Gibbs sampler object ------------------
-lba_loglike <- function(x, data, sample = FALSE) {
-  x <- exp(x)
-  if (any(data$rt < x["t0"])) {
-    return(-1e10)
-  }
-  if (sample){
-    data$rt=NA
-    data$resp = NA
-  }
-  
-  bs <- x["A"] + x[c("b1", "b2", "b3")][data$condition]
-  
-  if (sample) {
-    out <- rtdists::rLBA(n = nrow(data),
-                         A = x["A"],
-                         b = bs,
-                         t0 = x["t0"],
-                         mean_v = x[c("v1", "v2")],
-                         sd_v = c(1, 1),
-                         distribution = "norm",
-                         silent = TRUE)
-    data$rt <- out$rt
-    data$resp <- out$resp
-    
-  } else {
-    out <- rtdists::dLBA(rt = data$rt,
-                         response = data$resp,
-                         A = x["A"],
-                         b = bs,
-                         t0 = x["t0"],
-                         mean_v = list(x["v1"],x[ "v2"]),
-                         sd_v = c(1, 1),
-                         distribution = "norm",
-                         silent = TRUE)
-    bad <- (out < 1e-10) | (!is.finite(out))
-    out[bad] <- 1e-10
-    out <- sum(log(out))
-  }
-  if (sample){return(data)}
-  if (!sample){return(out)}
-}
-
 sampler <- pmwgs(
   data = data,
   pars = pars,
   prior = priors,
-  ll_func = lba_loglike
+  ll_func = log_likelihood
 )
-
-sampler <- init(sampler, n_cores = 15) # i don't use any start points here
+sampler <- init(sampler, n_cores = 1) # i don't use any start points here
 # Sample! -------------------------------------------------------------------
 burned <- run_stage(sampler, stage = "burn",iter = 750, particles = 100, n_cores = 15, pstar = .7)
-debug(get_conditionals_diag)
-adapted <- run_stage(burned, stage = "adapt", iter = 100, particles = 100, n_cores = 1, pstar =.4)
+adapted <- run_stage(burned, stage = "adapt", iter = 100, particles = 100, n_cores = 15, pstar =.4)
 sampled <- run_stage(adapted, stage = "sample", iter = 1000, particles = 100, n_cores = 15, pstar = .6)
