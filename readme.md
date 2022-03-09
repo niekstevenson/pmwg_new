@@ -47,6 +47,6 @@ stage B, but then no longer adjusted flexibly.
 11) Added blocked estimation for the covariance matrix. Run with sampling_blocked.R. See examples of how to define which parameters belong in which parameter groups in test_blocked.R
 
 
-12) Added factor analysis on the group level. See test_factors and test_factorsDMVN.R for how to run
+12) Added factor analysis and factor regression on the group level. See test_factors and test_factorsRegr.R for how to run
 
 You can find example files on running: combined multiple tasks, standard hierarchical, diagonal estimation, blocked estimation, factor estimation and single subject estimation. For questions email: niek.stevenson@gmail.com
