@@ -9,7 +9,7 @@ ll <- function(pars, data){
 }
 
 n_pars <- 15 # j = 1... p; # p with j = 1... p 
-n_subjects <-100; # n
+n_subjects <-20; # n
 n_trials <- 200      #number trials per subject per conditions
 n_factors <- 2
 n_preds <- 3

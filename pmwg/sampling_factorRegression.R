@@ -211,8 +211,8 @@ gibbs_step_factor_regr <- function(sampler){
   }
   
   var <- lambda_orig %*% solve(psi_inv) %*% t(lambda_orig) + diag(1/diag((sig_err_inv)))
-  lamdba_orig <- lambda_orig %*% matrix(diag(sqrt(1/diag(psi_invRecovered[,,1])), n_factors), nrow = n_factors)
-  beta_orig <- beta %*% matrix(diag(sqrt(1/diag(psi_invRecovered[,,1])), n_factors), nrow = n_factors)
+  lamdba_orig <- lambda_orig %*% matrix(diag(sqrt(1/diag(psi_inv)), n_factors), nrow = n_factors)
+  beta_orig <- beta %*% matrix(diag(sqrt(1/diag(psi_inv)), n_factors), nrow = n_factors)
   return(list(tmu = mu + t(lambda%*%beta[1,]), tvar = var, lambda = lambda_orig, eta = eta,
               sig_err_inv = sig_err_inv, psi_inv = psi_inv, beta = beta_orig, alpha = last$alpha))
 }
