@@ -40,7 +40,7 @@ pmwgs <- function(data, pars, ll_func, n_factors, prior = NULL, constraintMat = 
   }
   signFix <- F
   constraintMat <- constraintMat != 0 #For indexing
-  if(diag(constraintMat) != 0) signFix <- T
+  if(any(diag(constraintMat) != 0)) signFix <- T
   
   
   # Things I save rather than re-compute inside the loops.

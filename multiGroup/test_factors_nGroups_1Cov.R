@@ -20,7 +20,7 @@ log_likelihood=function(x,data, sample=F) {
 }
 
 n.trials = 75       #number trials per subject per conditions
-n.subj = 50          #number of subjects
+n.subj = 10          #number of subjects
 n.cond = 3          #number of conditions
 
 
@@ -95,7 +95,6 @@ sampler <- pmwgs(
 sampler <- init(sampler, n_cores = 12) # i don't use any start points here
 
 # Sample! -------------------------------------------------------------------
-debug(gibbs_step_factor)
 burned <- run_stage(sampler, stage = "burn",iter = 500, particles = 100, n_cores =12, pstar = .6)
 save(burned, file = paste0("./samples/LBA_", n.subj, "subs_", k, "factors_.RData"))
 adapted <- run_stage(burned, stage = "adapt", iter = 5000, particles = 100, n_cores = 12, pstar = .6)
