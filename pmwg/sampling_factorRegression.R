@@ -40,7 +40,7 @@ pmwgs <- function(data, covariates, pars, ll_func, n_factors, prior = NULL, cons
   
   if(is.null(constraintMat)){
     constraintMat <- matrix(1, nrow = n_pars, ncol = n_factors)
-    constraintMat[upper.tri(constraintMat)] <- 0 #Now you can't fix one of the diagonal values to 0
+    constraintMat[upper.tri(constraintMat, diag = T)] <- 0 #Now you can't fix one of the diagonal values to 0
   }
   signFix <- F
   constraintMat <- constraintMat != 0 #For indexing
@@ -111,7 +111,6 @@ init <- function(pmwgs, start_mu = NULL, start_var = NULL, start_psi_inv = NULL,
   pmwgs$init <- TRUE
   
   pmwgs$samples$theta_lambda[,,1] <- start_lambda
-  pmwgs$samples$theta_lambda_orig[,,1] <- start_lambda
   pmwgs$samples$theta_sig_err_inv[,,1] <- start_sig_err_inv
   pmwgs$samples$theta_psi_inv[,,1] <- start_psi_inv
   pmwgs$samples$theta_mu[, 1] <- start_mu
@@ -212,8 +211,10 @@ gibbs_step_factor_regr <- function(sampler){
   }
   
   var <- lambda_orig %*% solve(psi_inv) %*% t(lambda_orig) + diag(1/diag((sig_err_inv)))
-  return(list(tmu = mu + t(lambda%*%beta[1,]), tvar = var, lambda = lambda, lambda_orig = lambda_orig, eta = eta,
-              sig_err_inv = sig_err_inv, psi_inv = psi_inv, beta = beta, alpha = last$alpha))
+  lamdba_orig <- lambda_orig %*% matrix(diag(sqrt(1/diag(psi_invRecovered[,,1])), n_factors), nrow = n_factors)
+  beta_orig <- beta %*% matrix(diag(sqrt(1/diag(psi_invRecovered[,,1])), n_factors), nrow = n_factors)
+  return(list(tmu = mu + t(lambda%*%beta[1,]), tvar = var, lambda = lambda_orig, eta = eta,
+              sig_err_inv = sig_err_inv, psi_inv = psi_inv, beta = beta_orig, alpha = last$alpha))
 }
 
 
@@ -358,7 +359,6 @@ run_stage <- function(pmwgs,
     j <- start_iter + i
     
     pmwgs$samples$theta_lambda[,,j] <- pars$lambda
-    pmwgs$samples$theta_lambda_orig[,,j] <- pars$lambda_orig
     pmwgs$samples$theta_sig_err_inv[,,j] <- pars$sig_err_inv
     pmwgs$samples$theta_psi_inv[,,j] <- pars$psi_inv
     pmwgs$samples$theta_mu[, j] <- pars$tmu

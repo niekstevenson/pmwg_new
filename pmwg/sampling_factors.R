@@ -29,7 +29,6 @@ pmwgs <- function(data, pars, ll_func, n_factors, prior = NULL, constraintMat = 
   samples <- sample_store(pars, subjects, n_factors)
   # Checking and default priors
   if (is.null(prior)) {
-    lambda_idx <- c(c(1:n_factors), rep(n_factors, n_pars - n_factors))
     prior <- list(theta_mu_mean = rep(0, n_pars), 
                   theta_mu_var = rep(1, n_pars),
                   theta_lambda_var = 1)
@@ -37,7 +36,7 @@ pmwgs <- function(data, pars, ll_func, n_factors, prior = NULL, constraintMat = 
   
   if(is.null(constraintMat)){
     constraintMat <- matrix(1, nrow = n_pars, ncol = n_factors)
-    constraintMat[upper.tri(constraintMat)] <- 0 #Now you can't fix one of the diagonal values to 0
+    constraintMat[upper.tri(constraintMat, diag = T)] <- 0 #Now you can't fix one of the diagonal values to 0
   }
   signFix <- F
   constraintMat <- constraintMat != 0 #For indexing
@@ -53,7 +52,6 @@ pmwgs <- function(data, pars, ll_func, n_factors, prior = NULL, constraintMat = 
     n_pars = n_pars,
     n_factors = n_factors,
     n_subjects = n_subjects,
-    lambda_idx = lambda_idx,
     subjects = subjects,
     prior = prior,
     ll_func = ll_func,
@@ -102,7 +100,6 @@ init <- function(pmwgs, start_mu = NULL, start_var = NULL, start_psi_inv = NULL,
   pmwgs$init <- TRUE
   
   pmwgs$samples$theta_lambda[,,1] <- start_lambda
-  pmwgs$samples$theta_lambda_orig[,,1] <- start_lambda
   pmwgs$samples$theta_sig_err_inv[,,1] <- start_sig_err_inv
   pmwgs$samples$theta_psi_inv[,,1] <- start_psi_inv
   pmwgs$samples$theta_mu[, 1] <- start_mu
@@ -188,7 +185,8 @@ gibbs_step_factor <- function(sampler){
   }
   
   var <- lambda_orig %*% solve(psi_inv) %*% t(lambda_orig) + diag(1/diag((sig_err_inv)))
-  return(list(tmu = mu, tvar = var, lambda = lambda, lambda_orig = lambda_orig, eta = eta,
+  lamdba_orig <- lambda_orig %*% matrix(diag(sqrt(1/diag(psi_invRecovered[,,1])), n_factors), nrow = n_factors)
+  return(list(tmu = mu, tvar = var, lambda = lambda_orig, eta = eta,
               sig_err_inv = sig_err_inv, psi_inv = psi_inv, alpha = last$alpha))
 }
 
@@ -327,7 +325,6 @@ run_stage <- function(pmwgs,
     j <- start_iter + i
     
     pmwgs$samples$theta_lambda[,,j] <- pars$lambda
-    pmwgs$samples$theta_lambda_orig[,,j] <- pars$lambda_orig
     pmwgs$samples$theta_sig_err_inv[,,j] <- pars$sig_err_inv
     pmwgs$samples$theta_psi_inv[,,j] <- pars$psi_inv
     pmwgs$samples$theta_mu[, j] <- pars$tmu

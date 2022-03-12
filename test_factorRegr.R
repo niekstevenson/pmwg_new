@@ -12,17 +12,17 @@ n_pars <- 15 # j = 1... p; # p with j = 1... p
 n_subjects <-100; # n
 n_trials <- 200      #number trials per subject per conditions
 n_factors <- 2
-n_preds <- 2
+n_preds <- 3
 
 parNames <- paste0("V", 1:n_pars)
 
 lambda <- matrix(rep(c(.5,0,.8,.4,-.3), n_factors*3), nrow = n_pars, ncol = n_factors, byrow = TRUE)
 
 sigma <- diag(rep(c(0.15, 0.25, 0.3, 0.2, 0.1), 3))
-x <- rmvnorm(n_subjects, mean = c(0, 0), sigma = diag(1, n_preds))
+x <- rmvnorm(n_subjects, mean = c(0, 0, 0), sigma = diag(1, n_preds))
 colnames(x) <- paste0("P", 1:n_preds)
 
-beta <- matrix(c(-.4, -.15, .5,
+beta <- matrix(c(-.4, -.15, .5, .5, .3,
                  .8), nrow = n_preds, byrow = T)
 
 eta <- x %*% beta + rmvnorm(n_subjects, sigma = diag(rep(1, n_factors)))

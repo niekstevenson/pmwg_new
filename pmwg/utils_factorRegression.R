@@ -60,10 +60,6 @@ extend_sampler <- function(sampler, n_samples, stage) {
   new_lambda[,,-(start:end)] <- old$theta_lambda
   sampler$samples$theta_lambda <- new_lambda 
   
-  new_lambda_orig = array(NA_real_,dim = dim(old$theta_lambda_orig) + c(0, 0, n_samples),dimnames = list(par_names, NULL, NULL))
-  new_lambda_orig[,,-(start:end)] <- old$theta_lambda_orig
-  sampler$samples$theta_lambda_orig <- new_lambda_orig
-  
   new_sig_err_inv = array(NA_real_,dim = dim(old$theta_sig_err_inv) + c(0, 0, n_samples),dimnames = list(par_names, par_names, NULL))
   new_sig_err_inv[,,-(start:end)] <- old$theta_sig_err_inv
   sampler$samples$theta_sig_err_inv <- new_sig_err_inv
@@ -105,7 +101,6 @@ trim_na <- function(sampler) {
   sampler$samples$theta_beta <- sampler$samples$theta_beta[, , 1:idx, drop = F]
   sampler$samples$theta_eta <- sampler$samples$theta_eta[, , 1:idx, drop = F]
   sampler$samples$theta_lambda <- sampler$samples$theta_lambda[, , 1:idx, drop = F]
-  sampler$samples$theta_lambda_orig <- sampler$samples$theta_lambda_orig[, , 1:idx, drop = F]
   sampler$samples$theta_psi_inv <- sampler$samples$theta_psi_inv[, , 1:idx, drop = F]
   sampler$samples$theta_sig_err_inv <- sampler$samples$theta_sig_err_inv[, , 1:idx, drop = F]
   sampler$samples$theta_mu <- sampler$samples$theta_mu[, 1:idx]
@@ -170,7 +165,6 @@ sample_store <- function(par_names, subject_ids, covariates, n_factors, iters = 
     theta_mu = array(NA_real_,dim = c(n_pars, iters), dimnames = list(par_names, NULL)),
     theta_var = array(NA_real_,dim = c(n_pars, n_pars, iters),dimnames = list(par_names, par_names, NULL)),
     theta_lambda = array(NA_real_,dim = c(n_pars, n_factors, iters),dimnames = list(par_names, NULL, NULL)),
-    theta_lambda_orig = array(NA_real_,dim = c(n_pars, n_factors, iters),dimnames = list(par_names, NULL, NULL)),
     theta_sig_err_inv = array(NA_real_,dim = c(n_pars, n_pars, iters),dimnames = list(par_names, par_names, NULL)),
     theta_psi_inv = array(NA_real_, dim = c(n_factors, n_factors, iters), dimnames = list(NULL, NULL, NULL)),
     theta_beta = array(NA_real_, dim = c(n_covariates, n_factors, iters), dimnames = list(covariate_names, NULL, NULL)),
