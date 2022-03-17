@@ -264,6 +264,8 @@ run_stage <- function(pmwgs,
   mix <- set_mix(stage, mix)
   # Set necessary local variables
   .n_unique <- n_unique
+  n_unique <- 200
+  
   # Set stable (fixed) new_sample argument for this run
   n_pars <- length(pmwgs$par_names)
   

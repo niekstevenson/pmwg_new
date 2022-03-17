@@ -185,7 +185,7 @@ gibbs_step_factor <- function(sampler){
   }
   
   var <- lambda_orig %*% solve(psi_inv) %*% t(lambda_orig) + diag(1/diag((sig_err_inv)))
-  lamdba_orig <- lambda_orig %*% matrix(diag(sqrt(1/diag(psi_inv)), n_factors), nrow = n_factors)
+  lambda_orig <- lambda_orig %*% matrix(diag(sqrt(1/diag(psi_inv)), n_factors), nrow = n_factors)
   return(list(tmu = mu, tvar = var, lambda = lambda_orig, eta = eta,
               sig_err_inv = sig_err_inv, psi_inv = psi_inv, alpha = last$alpha))
 }
@@ -260,6 +260,8 @@ run_stage <- function(pmwgs,
   mix <- set_mix(stage, mix)
   # Set necessary local variables
   .n_unique <- n_unique
+  n_unique <- 200
+  
   # Set stable (fixed) new_sample argument for this run
   n_pars <- length(pmwgs$par_names)
   

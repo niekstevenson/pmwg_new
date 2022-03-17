@@ -9,7 +9,7 @@ ll <- function(pars, data){
 }
 
 n_pars <- 15 # j = 1... p; # p with j = 1... p 
-n_subjects <-50; # n
+n_subjects <-10; # n
 n_trials <- 200      #number trials per subject per conditions
 n_factors <- 2
 
@@ -44,6 +44,7 @@ for(k in 1:3){
   sampler <- init(sampler, n_cores = 8) # i don't use any start points here
   
   # Sample! -------------------------------------------------------------------
+  debug(gibbs_step_factor)
   burned <- run_stage(sampler, stage = "burn",iter = 1500, particles = 150, n_cores =8, pstar = .6)
   save(burned, file = paste0("samples/factor_", k, "F_", n_subjects, "S_", n_pars, "P_FactRecovery.RData"))
   adapted <- run_stage(burned, stage = "adapt",iter = 1500, particles = 150, n_cores =8, pstar = .6)
