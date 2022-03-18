@@ -2,7 +2,6 @@
 
 rm(list = ls())
 library(rtdists)
-source("pmwg/sampling_n_chains.R")
 
 log_likelihood=function(x,data, sample=F) {
   x <- exp(x)
@@ -19,8 +18,8 @@ log_likelihood=function(x,data, sample=F) {
   out
 }
 
-n.trials = 200       #number trials per subject per conditions
-n.subj = 27          #number of subjects
+n.trials = 70       #number trials per subject per conditions
+n.subj = 10          #number of subjects
 n.cond = 3          #number of conditions
 
 
@@ -67,45 +66,16 @@ priors <- list(
   theta_mu_mean = rep(0, length(pars)),
   theta_mu_var = diag(rep(1, length(pars)))
 )
+source("variants/standard.R")
 
-sampler <- pmwgs(
-  data = data,
-  pars = pars,
-  prior = priors,
-  ll_func = log_likelihood,
-  n_chains = 3
-)
-source("pmwg/sampling_n_chains.R")
-
-
-microbenchmark::microbenchmark(
-  sampler <- init(sampler, n_cores = 9), # i don't use any start points here
-  times = 5
-)
-
-# Sample! -------------------------------------------------------------------
-
-microbenchmark::microbenchmark(
-  burned <- run_stage(sampler, stage = "burn",iter = 50, particles = 100, n_cores = 9, pstar = .7, display_progress = F),
-  times = 5
-  )
-
-
-source("pmwg/sampling.R")
 sampler <- pmwgs(
   data = data,
   pars = pars,
   prior = priors,
   ll_func = log_likelihood
 )
-source("dmc_pmwg.R")
-microbenchmark::microbenchmark(
-  burnedAndrew <- mclapply(list(sampler,sampler,sampler),run_stages,
-                           iter=c(50,NA,NA),n_cores=3,mc.cores=3,original=F, epsilon = .3, particles = 100),
-  times = 5
-)
 
-
-
-adapted <- run_stage(burned, stage = "adapt", iter = 1000, particles = 100, n_cores = 15, pstar =.4)
+sampler <- init(sampler, n_cores = 10) # i don't use any start points here
+burned <- run_stage(sampler, stage = "burn",iter = 500, particles = 100, n_cores = 10, pstar = .7)
+adapted <- run_stage(burned, stage = "adapt", iter = 1000, particles = 100, n_cores = 10, pstar =.7)
 sampled <- run_stage(adapted, stage = "sample", iter = 1000, particles = 100, n_cores = 15, pstar = .6)

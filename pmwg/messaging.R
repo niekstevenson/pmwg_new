@@ -1,16 +1,4 @@
-#' An altered version of the utils:txtProgressBar that shows acceptance rate
-#'
-#' The progress bar displays several elements, the progress visually as a bar
-#' being filled and the percentage complete as per the standard
-#' utils::txtProgressBar and additionally the average across subjects of the
-#' rate of accepting newly generated particles.
-#'
-#' @param min The minimum of the value being updated for the progress bar
-#' @param max The maximum of the value being updated for the progress bar
-#'
-#' @return A structure matching the structure of a txtProgresBar with additional
-#'   info
-#' @keywords internal
+
 accept_progress_bar <- function(min = 0, max = 1) {
   .val <- 0
   .killed <- FALSE
@@ -77,16 +65,6 @@ accept_progress_bar <- function(min = 0, max = 1) {
             class = c("accept_progress_bar", "txtProgressBar"))
 }
 
-
-#' A function that updates the accept_progress_bar with progress and accept rate
-#'
-#' @param pb The progress bar object
-#' @param value The value to set the bar width to
-#' @param extra A value that represents the number of accepted particles
-#'
-#' @return The old value that was present before updating
-#'
-#' @keywords internal
 update_progress_bar <- function(pb, value, extra = 0) {
   if (!inherits(pb, "txtProgressBar")) {
     stop(gettextf(
@@ -101,32 +79,22 @@ update_progress_bar <- function(pb, value, extra = 0) {
   invisible(oldval)
 }
 
-
-#' Error handler for the gibbs_step call
-#'
-#' If an error was detected when generating new values in Gibbs step this
-#' function is called to generate the error message and save the state of the
-#' samples at that moment to help with debugging.
-#'
-#' @param pmwgs The pmwgs object for the current run.
-#' @param err_cond The original error condition that prompted this.
-#'
-#' @keywords internal
-gibbs_step_err <- function(pmwgs, err_cond) {
-  store_tmp <- tempfile(
-    pattern = "pmwg_stage_samples_",
-    tmpdir = ".",
-    fileext = ".RDS"
+accept_rate <- function(pmwgs, window_size = 200) {
+  n_samples <- pmwgs$samples$idx
+  if (is.null(n_samples) || n_samples < 3) {
+    return(array(0, dim(pmwgs$samples$alpha)[2]))
+  }
+  if (n_samples <= window_size) {
+    start <- 1
+    end <- n_samples
+  } else {
+    start <- n_samples - window_size + 1
+    end <- n_samples
+  }
+  vals <- pmwgs$samples$alpha[1, , start:end]
+  apply(
+    apply(vals, 1, diff) != 0, # If diff != 0
+    2,
+    mean
   )
-  sampler_tmp <- tempfile(
-    pattern = "pmwg_obj_",
-    tmpdir = ".",
-    fileext = ".RDS"
-  )
-  message("\nError while generating new group level parameters")
-  message(err_cond)
-  traceback()
-  message("\nSaving current state of pmwgs object: ", sampler_tmp)
-  saveRDS(pmwgs, file = sampler_tmp)
-  stop("Stopping execution")
 }

@@ -34,7 +34,7 @@ alpha <- sampled$samples$alpha[,,sampled$samples$stage=="sample"]
 # store the mu
 theta_mu <- sampled$samples$theta_mu[,sampled$samples$stage=="sample"]
 # store the factor loadings. I foresee problems here with the sign switching (if diag unconstrained) and them having normal/t-dist support
-lambda <- sampled$samples$theta_lambda[,,sampled$samples$stage=="sample", drop = F]
+lambda <- sampled$samples$lambda_untransf[,,sampled$samples$stage=="sample", drop = F]
 #store the factor variance matrix and make sure they're on the real line
 psi_inv <- sampled$samples$theta_psi_inv[,,sampled$samples$stage=="sample", drop = F]
 #store the residual error matrix and make sure they're on the real line

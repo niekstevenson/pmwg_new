@@ -1,7 +1,8 @@
 #Script for testing the recovery of the blocked covariance matrix
 
 rm(list = ls())
-source("pmwg/sampling_blocked.R")
+source("variants/blocked.R")
+
 library(rtdists)
 
 joint_ll <- function(x, data){
@@ -32,8 +33,8 @@ log_likelihood=function(x,data, sample=TRUE) {
 }
 
 
-n.trials <- 100      #number trials per subject per conditions
-n.subj <- 25 #number of subjects
+n.trials <- 70      #number trials per subject per conditions
+n.subj <- 10 #number of subjects
 n.cond <- 3
 n.exp <- 2
 
@@ -111,6 +112,7 @@ for(i in 1:n.exp){
 
 pars <- rownames(subj_random_effects)
 # Create the Particle Metropolis within Gibbs sampler object ------------------
+
 sampler <- pmwgs(
   data = df,
   pars = pars,
@@ -121,7 +123,7 @@ sampler <- pmwgs(
 sampler <- init(sampler, n_cores = 12) # i don't use any start points here
 
 # Sample! -------------------------------------------------------------------
-burned <- run_stage(sampler, stage = "burn",iter = 2500, particles = 100, n_cores =12, pstar = .7)
+burned <- run_stage(sampler, stage = "burn",iter = 500, particles = 100, n_cores =10, pstar = .7)
 adapted <- run_stage(burned, stage = "adapt", iter = 5000, particles = 100, n_cores = 12, pstar = .7)
 sampled <- run_stage(adapted, stage = "sample", iter = 1000, particles = 100, n_cores = 12, pstar = .7)
 

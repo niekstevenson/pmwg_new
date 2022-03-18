@@ -1,7 +1,7 @@
 #Script for testing the recovery of factor pmwg s
 
 rm(list = ls())
-source("pmwg/sampling_factorRegression.R")
+source("variants/factorRegr.R")
 
 ll <- function(pars, data){
   n_pars <- length(pars)
@@ -37,7 +37,8 @@ for(j in 1:n_subjects){
 }
 
 # Create the Particle Metropolis within Gibbs sampler object ------------------
-source("pmwg/sampling_factorRegression.R")
+source("variants/factorRegr.R")
+
 sampler <- pmwgs(
   data = all_data,
   pars = parNames,
@@ -49,7 +50,7 @@ sampler <- pmwgs(
 sampler <- init(sampler, n_cores = 8) # i don't use any start points here
 
 # Sample! -------------------------------------------------------------------
-burned <- run_stage(sampler, stage = "burn",iter = 1000, particles = 150, n_cores =1, pstar = .6)
+burned <- run_stage(sampler, stage = "burn",iter = 20, particles = 150, n_cores =1, pstar = .6)
 save(burned, file = paste0("samples/factorRegr_", n_factors, "F_", n_subjects, "S_", n_pars, "P_FactRecovery.RData"))
 adapted <- run_stage(burned, stage = "adapt",iter = 1500, particles = 150, n_cores =8, pstar = .6)
 sampled <- run_stage(adapted, stage = "sample",iter = 1500, particles = 150, n_cores =8, pstar = .6)

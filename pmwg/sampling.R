@@ -10,97 +10,57 @@ library(Rcpp)
 library(mvtnorm) ## For the multivariate normal.
 library(condMVNorm)
 
-source("pmwg/utils.R")
 source("pmwg/messaging.R")
 
-pmwgs <- function(data, pars, ll_func, prior = NULL, hyper = NULL) {
-  ###Gets/sets priors, creates pmwgs object and stores essentials
-  # Descriptives
-  n_pars <- length(pars)
-  subjects <- unique(data$subject)
-  n_subjects <- length(subjects)
-
-  # Hyperparameters
-  v_half <- 2 # hyperparameter on Σ prior (Half-t degrees of freedom)
-  A_half <- 1 # hyperparameter on Σ prior (Half-t scale) #nolint
-  
+pmwgs <- function(data, pars, ll_func, prior = NULL, ...) {
   # Storage for the samples.
-  samples <- sample_store(pars, subjects)
-  # Checking and default priors
-  if (is.null(prior)) {
-    prior <- list(theta_mu_mean = rep(0, n_pars), theta_mu_var = diag(rep(1, n_pars)))
-  }
-  # Things I save rather than re-compute inside the loops.
-  if(is.matrix(prior$theta_mu_var)){
-    prior$theta_mu_invar <- ginv(prior$theta_mu_var) #Inverse of the matrix
-  } else{
-    prior$theta_mu_invar <- 1/prior$theta_mu_var #Inverse of the matrix
-  }
+  subjects <- unique(data$subject)
+  samples <- sample_store(pars, subjects, ...)
   sampler <- list(
     data = data,
     par_names = pars,
-    n_pars = n_pars,
-    n_subjects = n_subjects,
-    subjects = subjects,
-    prior = prior,
+    subjects = unique(data$subject),
+    n_pars = length(pars),
+    n_subjects = length(subjects),
     ll_func = ll_func,
-    samples = samples,
-    init = FALSE
+    samples = samples
   )
-  #Hyper parameters
-  attr(sampler, "v_half") <- v_half
-  attr(sampler, "A_half") <- A_half
-  if(!is.null(hyper$std_shape)){
-    attr(sampler, "std_shape") <- hyper$std_shape
-    attr(sampler, "std_rate") <- hyper$std_rate
-  }
-  if(!is.null(hyper$std_df)){
-    attr(sampler, "std_df") <- hyper$std_df
-    attr(sampler, "std_scale") <- hyper$std_scale
-  }
   class(sampler) <- "pmwgs"
-  sampler
+  sampler <- add_info(sampler, prior, ...)
+  return(sampler)
 }
 
 init <- function(pmwgs, start_mu = NULL, start_var = NULL,
          display_progress = TRUE, particles = 1000, n_cores = 1, epsilon = NULL) {
   # Gets starting points for the mcmc process
   # If no starting point for group mean just use zeros
-  if (is.null(start_mu)) start_mu <- rnorm(pmwgs$n_pars, sd = 1)
-  # If no starting point for group var just sample some
-  if (is.null(start_var)) {
-    #If prior on covariances is a vector, assume diagonal only, otherwise assume full cvs structure
-    if(is.matrix(pmwgs$prior$theta_mu_var)){
-      start_var <- riwish(pmwgs$n_pars * 3,diag(pmwgs$n_pars))
-    } else{
-      start_var <- diag(1/rgamma(pmwgs$n_pars, 10, 5)) #But stupid maybe as startpoint
-    }
+  startpoints <- get_startpoints(pmwgs, start_mu, start_var)
+  if(n_cores > 1){
+    proposals <- mclapply(X=1:pmwgs$n_subjects,FUN=start_proposals,start_mu = startpoints$tmu, 
+                        start_var = startpoints$tvar, n_particles = particles, pmwgs = pmwgs, mc.cores = n_cores)
+  } else{
+    proposals <- lapply(X=1:pmwgs$n_subjects,FUN=start_proposals,start_mu = startpoints$tmu, 
+               start_var = startpoints$tvar, n_particles = particles, pmwgs = pmwgs)
   }
+  proposals <- array(unlist(proposals), dim = c(pmwgs$n_pars + 2, pmwgs$n_subjects))
   
   # Sample the mixture variables' initial values.
-  a_half <- 1 / rgamma(n = pmwgs$n_pars, shape = 2, rate = 1)
-  # Create and fill initial random effects for each subject
-  likelihoods <- array(NA_real_, dim = c(pmwgs$n_subjects))
-  if(n_cores > 1){
-    proposals <- mclapply(X=1:pmwgs$n_subjects,FUN=start_proposals,start_mu = start_mu, 
-                        start_var = start_var, n_particles = particles, pmwgs = pmwgs, mc.cores = n_cores)
-  } else{
-    proposals <- lapply(X=1:pmwgs$n_subjects,FUN=start_proposals,start_mu = start_mu, 
-               start_var = start_var, n_particles = particles, pmwgs = pmwgs)
-  }
-  proposals <- simplify2array(proposals)
-  pmwgs$init <- TRUE
-  pmwgs$samples$theta_mu[, 1] <- start_mu
-  pmwgs$samples$theta_var[, , 1] <- start_var
-  pmwgs$samples$alpha[, , 1] <- do.call(cbind, proposals[1,])
-  pmwgs$samples$last_theta_var_inv <- ginv(start_var)
-  pmwgs$samples$subj_ll[, 1] <- unlist(proposals[2,])
-  pmwgs$samples$a_half[, 1] <- a_half
-  pmwgs$samples$idx <- 1
-  pmwgs$samples$epsilon[,1] <- rep(set_epsilon(pmwgs$n_pars, epsilon), pmwgs$n_subjects)
-  pmwgs$samples$origin[,1] <- rep(2, pmwgs$n_subjects)
+  pmwgs$samples <- fill_samples(samples = pmwgs$samples, group_level = startpoints, proposals = proposals,
+                                epsilon = rep(set_epsilon(pmwgs$n_pars, epsilon)), j = 1, n_pars = pmwgs$n_pars)
   return(pmwgs)
 }
+
+fill_samples_base <- function(samples, group_level, proposals, epsilon, j = 1, n_pars){
+  samples$theta_mu[, j] <- group_level$tmu
+  samples$theta_var[, , j] <- group_level$tvar
+  samples$alpha[, , j] <- proposals[1:n_pars,]
+  samples$subj_ll[, j] <- proposals[n_pars + 1,]
+  samples$origin[,j] <- proposals[n_pars + 2,]
+  samples$idx <- j
+  samples$epsilon[,j] <- epsilon
+  return(samples)
+}
+
 
 start_proposals <- function(s, start_mu, start_var, n_particles, pmwgs){
   #Draw the first start point
@@ -109,78 +69,7 @@ start_proposals <- function(s, start_mu, start_var, n_particles, pmwgs){
   lw <- apply(proposals,1,pmwgs$ll_func,data = pmwgs$data[pmwgs$data$subject == pmwgs$subjects[s], ])
   weight <- exp(lw - max(lw))
   idx <- sample(x = n_particles, size = 1, prob = weight)
-  return(list(proposal = proposals[idx,], ll = lw[idx]))
-}
-
-gibbs_step_diag<- function(sampler){
-  # Gibbs step for diagonal only
-  # Get single iter versions, tmu = theta_mu, tvar = theta_var
-  last <- last_sample(sampler$samples)
-  hyper <- attributes(sampler)
-  prior <- sampler$prior
-  
-  prior$theta_mu_invar <- diag(prior$theta_mu_invar)
-  last$tvinv <- diag(last$tvinv)
-  
-  #Mu
-  var_mu = 1.0 / (sampler$n_subjects * last$tvinv + prior$theta_mu_invar)
-  mean_mu = var_mu * ((apply(last$alpha, 1, sum) * last$tvinv + prior$theta_mu_mean * prior$theta_mu_invar))
-  tmu <- rnorm(sampler$n_pars, mean_mu, sd = sqrt(var_mu))
-  names(tmu) <- sampler$par_names
-  
-  if(!is.null(hyper$std_shape)){
-    # InvGamma alternative (probably inferior) prior
-    shape = hyper$std_shape + sampler$n_subjects / 2
-    rate = hyper$std_rate + rowSums( (last$alpha-tmu)^2 ) / 2
-    tvinv = rgamma(n=sampler$n_pars, shape=shape, rate=rate)
-    tvar = 1/tvinv
-    a_half <- NULL
-  } else {
-    tvinv = rgamma(n=sampler$n_pars, shape=hyper$v_half/2 + sampler$n_subjects/2, rate=hyper$v_half/last$a_half + 
-                     rowSums( (last$alpha-tmu)^2 ) / 2)
-    tvar = 1/tvinv
-    #Contrary to standard pmwg I use shape, rate for IG()
-    a_half <- 1 / rgamma(n = sampler$n_pars, shape = (hyper$v_half + sampler$n_pars) / 2,
-                         rate = hyper$v_half * tvinv + 1/hyper$A_half)
-  }
-  return(list(tmu = tmu, tvar = diag(tvar), tvinv = diag(tvinv), a_half = a_half, alpha = last$alpha))
-}
-
-gibbs_step_full <- function(sampler){
-  # Gibbs step for group means, with full covariance matrix estimation
-  # tmu = theta_mu, tvar = theta_var
-  last <- last_sample(sampler$samples)
-  hyper <- attributes(sampler)
-  prior <- sampler$prior
-  
-  # Here mu is group mean, so we are getting mean and variance
-  var_mu <- ginv(sampler$n_subjects * last$tvinv + prior$theta_mu_invar)
-  mean_mu <- as.vector(var_mu %*% (last$tvinv %*% apply(last$alpha, 1, sum) +
-                                     prior$theta_mu_invar %*% prior$theta_mu_mean))
-  chol_var_mu <- t(chol(var_mu)) # t() because I want lower triangle.
-  # New sample for mu.
-  tmu <- rmvnorm(1, mean_mu, chol_var_mu %*% t(chol_var_mu))[1, ]
-  names(tmu) <- sampler$par_names
-  
-  # New values for group var
-  theta_temp <- last$alpha - tmu
-  cov_temp <- (theta_temp) %*% (t(theta_temp))
-  if(!is.null(hyper$std_df)){
-    B_half <- hyper$std_scale * diag(1, nrow = sampler$n_pars) + cov_temp # nolint
-    tvar <- riwish(hyper$std_df + sampler$n_subjects, B_half) # New sample for group variance
-    tvinv <- ginv(tvar)
-    # Sample new mixing weights.
-    a_half <- NULL
-  } else{
-    B_half <- 2 * hyper$v_half * diag(1 / last$a_half) + cov_temp # nolint
-    tvar <- riwish(hyper$v_half + sampler$n_pars - 1 + sampler$n_subjects, B_half) # New sample for group variance
-    tvinv <- ginv(tvar)
-    
-    # Sample new mixing weights.
-    a_half <- 1 / rgamma(n = sampler$n_pars,shape = (hyper$v_half + sampler$n_pars) / 2,
-                         rate = hyper$v_half * diag(tvinv) + hyper$A_half)
-  }
-  return(list(tmu = tmu,tvar = tvar,tvinv = tvinv,a_half = a_half,alpha = last$alpha))
+  return(list(proposal = proposals[idx,], ll = lw[idx], origin = 2))
 }
 
 new_particle <- function (s, data, num_particles, parameters, eff_mu = NULL, 
@@ -223,30 +112,10 @@ new_particle <- function (s, data, num_particles, parameters, eff_mu = NULL,
   weights <- exp(l - max(l))
   idx <- sample(x = num_particles, size = 1, prob = weights)
   origin <- min(which(idx <= cumuNumbers))
-  return(list(ll = lw[idx], origin = origin, proposal = proposals[idx, ]))
+  return(list(proposal = proposals[idx, ], ll = lw[idx], origin = origin))
 }
 
-get_conditionals_diag <- function(s, samples, n_pars, iteration){
-  pts2_unwound <- apply(samples$theta_var,3,diag)
-  all_samples <- rbind(samples$alpha[, s,],samples$theta_mu,pts2_unwound)
-  mu_tilde <- apply(all_samples, 1, mean)
-  var_tilde <- var(t(all_samples))
-  condmvn <- condMVN(mean = mu_tilde, sigma = var_tilde,
-                                 dependent.ind = 1:n_pars, given.ind = (n_pars + 1):length(mu_tilde),
-                                 X.given = c(samples$theta_mu[,iteration], diag(samples$theta_var[,,iteration])))
-  return(list(eff_mu = condmvn$condMean, eff_var = condmvn$condVar))
-}
 
-get_conditionals_full <- function(s, samples, n_pars, iteration){
-  pts2_unwound <- apply(samples$theta_var,3,unwind)
-  all_samples <- rbind(samples$alpha[, s,],samples$theta_mu,pts2_unwound)
-  mu_tilde <- apply(all_samples, 1, mean)
-  var_tilde <- var(t(all_samples))
-  condmvn <- condMVN(mean = mu_tilde, sigma = var_tilde,
-                                 dependent.ind = 1:n_pars, given.ind = (n_pars + 1):length(mu_tilde),
-                                 X.given = c(samples$theta_mu[,iteration], unwind(samples$theta_var[,,iteration])))
-  return(list(eff_mu = condmvn$condMean, eff_var = condmvn$condVar))
-}
 
 run_stage <- function(pmwgs,
                       stage,
@@ -264,18 +133,8 @@ run_stage <- function(pmwgs,
   mix <- set_mix(stage, mix)
   # Set necessary local variables
   .n_unique <- n_unique
-  n_unique <- 200
-  
   # Set stable (fixed) new_sample argument for this run
   n_pars <- length(pmwgs$par_names)
-  
-  if(is.matrix(pmwgs$prior$theta_mu_var)){
-    gibbs_step <- gibbs_step_full
-    get_conditionals <- get_conditionals_full
-  } else{
-    gibbs_step <- gibbs_step_diag
-    get_conditionals <- get_conditionals_diag
-  }
   
   # Display stage to screen
   msgs <- list(
@@ -332,29 +191,21 @@ run_stage <- function(pmwgs,
                  eff_var, mix, pmwgs$ll_func, epsilon, subjects)
     }
     proposals <- array(unlist(proposals), dim = c(pmwgs$n_pars + 2, pmwgs$n_subjects))
-    ll <- proposals[1,]
-    origin <- proposals[2,]
-    alpha <- proposals[3:(pmwgs$n_pars+2),]
 
+
+
+    #Fill samples
     j <- start_iter + i
+    pmwgs$samples <- fill_samples(samples = pmwgs$samples, group_level = pars,
+                            proposals = proposals, epsilon = epsilon, j = j, n_pars = pmwgs$n_pars)
     
-    pmwgs$samples$theta_mu[, j] <- pars$tmu
-    pmwgs$samples$theta_var[, , j] <- pars$tvar
-    pmwgs$samples$last_theta_var_inv <- pars$tvinv
-    pmwgs$samples$alpha[, , j] <- alpha
-    pmwgs$samples$idx <- j
-    pmwgs$samples$subj_ll[, j] <- ll
-    pmwgs$samples$origin[,j] <- origin
-    pmwgs$samples$a_half[, j] <- pars$a_half
-    
+    #Update epsilon
     if(!is.null(pstar)){
-      if(j > n0){
-        acc <- alpha[1,] != pmwgs$samples$alpha[1,,(j-1)]
-        epsilon<-max(update.epsilon(epsilon^2, acc, pstar, j, pmwgs$n_pars, alphaStar), epsilon_upper_bound)
+      if(j > 2){
+        acc <-  pmwgs$samples$alpha[1,,j] != pmwgs$samples$alpha[1,,(j-1)]
+        epsilon<-pmin(update.epsilon(epsilon^2, acc, pstar, j, pmwgs$n_pars, alphaStar), epsilon_upper_bound)
       }
     }
-    
-    pmwgs$samples$epsilon[,j] <- epsilon
     
     if (stage == "adapt") {
       res <- test_sampler_adapted(pmwgs, n_unique, i, n_cores, get_conditionals)
@@ -414,4 +265,107 @@ test_sampler_adapted <- function(pmwgs, n_unique, i, n_cores, conditionals_func)
   return("continue")
 }
 
+particle_draws <- function(n, mu, covar) {
+  if (n <= 0) {
+    return(NULL)
+  }
+  return(rmvnorm(n, mu, covar))
+}
+
+update.epsilon<- function(epsilon2, acc, p, i, d, alpha) {
+  c=((1-1/d)*sqrt(2*pi)*exp(alpha^2/2)/(2*alpha) + 1/(d*p*(1-p)))
+  Theta=log(sqrt(epsilon2))
+  Theta=Theta+c*(acc-p)/max(200, i/d)
+  return(exp(Theta))
+}
+
+set_epsilon <- function(n_pars, epsilon) {
+  if (n_pars > 15) {
+    epsilon <- 0.1
+  } else if (n_pars > 10) {
+    epsilon <- 0.3
+  } else {
+    epsilon <- 0.5
+  }
+  message(sprintf("Epsilon has been set to %.1f based on number of parameters",epsilon))
+  return(epsilon)
+}
+
+set_mix <- function(stage, mix) {
+  if (stage == "sample") {
+    mix <- c(0.1, 0.2, 0.7)
+  } else {
+    mix <- c(0.5, 0.5, 0.0)
+  }
+  message(sprintf("mix has been set to c(%s) based on the stage being run",  paste(mix, collapse = ", ")))
+  return(mix)
+}
+
+numbers_from_proportion <- function(mix_proportion, num_particles = 1000) {
+  numbers <- stats::rbinom(n = 2, size = num_particles, prob = mix_proportion)
+  if (mix_proportion[3] == 0) {
+    numbers[3] <- 0
+    numbers[2] <- num_particles - numbers[1]
+  } else {
+    numbers[3] <- num_particles - sum(numbers)
+  }
+  return(numbers)
+}
+
+extract_samples <- function(sampler, stage = c("adapt", "sample")) {
+  samples <- sampler$samples
+  stage_filter <- samples$stage %in% stage
+  sampled_filter <- seq_along(samples$stage) <= samples$idx
+  
+  list(
+    theta_mu = samples$theta_mu[, stage_filter & sampled_filter],
+    theta_var = samples$theta_var[, , stage_filter & sampled_filter],
+    alpha = samples$alpha[, , stage_filter & sampled_filter]
+  )
+}
+
+extend_sampler <- function(sampler, n_samples, stage) {
+  # This function takes the sampler and extends it along the intended number of
+  # iterations, to ensure that we're not constantly increasing our sampled object
+  # by 1. 
+  old <- sampler$samples
+  par_names <- sampler$par_names
+  subject_ids <- sampler$subjects
+  start <- old$idx + 1
+  end <- old$idx + n_samples
+  for(obj_name in names(sampler$samples)){
+    obj <- sampler$samples[[obj_name]]
+    dimensions <- length(dim(obj))
+    if(dimensions > 1 & !obj_name %in% c("last_theta_var_inv")){ #Ok not the cleanest
+      new_dim <- c(rep(0, (dimensions -1)), n_samples)
+      extension <- array(NA_real_, dim = dim(obj) +  new_dim, dimnames = dimnames(obj))
+      if(dimensions == 2){ #There must be a cleaner way to to do this
+        extension[, -(start:end)] <- obj
+      } else{
+        extension[,, -(start:end)] <- obj
+      }
+      sampler$samples[[obj_name]] <- extension
+    }
+  }
+  sampler$samples$stage <- c(old$stage, rep(stage, n_samples))
+  sampler
+}
+
+trim_na <- function(sampler) {
+  idx <- sampler$samples$idx
+  sampler$samples$stage <- sampler$samples$stage[1:idx]
+  for(obj_name in names(sampler$samples)){
+    obj <- sampler$samples[[obj_name]]
+    dimensions <- length(dim(obj))
+    if(dimensions > 1 & obj_name != "last_theta_var_inv"){ #Ok not the cleanest
+      if(dimensions == 2){ #There must be a cleaner way to to do this
+        obj <- obj[,1:idx]
+      } else{
+        obj <- obj[,,1:idx]
+      }
+      sampler$samples[[obj_name]] <- obj
+    }
+  }
+  return(sampler)
+}
 

@@ -2,7 +2,7 @@
 
 rm(list = ls())
 library(rtdists)
-source("pmwg/sampling.R")
+source("variants/diag.R")
 
 log_likelihood=function(x,data, sample=F) {
   x <- exp(x)
