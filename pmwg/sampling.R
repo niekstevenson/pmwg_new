@@ -133,6 +133,7 @@ run_stage <- function(pmwgs,
   mix <- set_mix(stage, mix)
   # Set necessary local variables
   .n_unique <- n_unique
+  n_unique <- 200
   # Set stable (fixed) new_sample argument for this run
   n_pars <- length(pmwgs$par_names)
   
@@ -201,7 +202,7 @@ run_stage <- function(pmwgs,
     
     #Update epsilon
     if(!is.null(pstar)){
-      if(j > 2){
+      if(j > n0){
         acc <-  pmwgs$samples$alpha[1,,j] != pmwgs$samples$alpha[1,,(j-1)]
         epsilon<-pmin(update.epsilon(epsilon^2, acc, pstar, j, pmwgs$n_pars, alphaStar), epsilon_upper_bound)
       }
