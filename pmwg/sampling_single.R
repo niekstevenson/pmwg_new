@@ -3,9 +3,6 @@ library(MASS) ## For matrix inverse.
 library(MCMCpack) #For inverse wishart
 library(lme4)
 library(parallel)
-library(abind)
-library(checkmate)
-library(Rcpp)
 
 source("pmwg/utils.R")
 source("pmwg/messaging.R")

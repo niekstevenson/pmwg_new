@@ -5,9 +5,7 @@ library(MASS) ## For matrix inverse.
 library(MCMCpack) #For inverse wishart
 library(lme4)
 library(parallel)
-library(abind)
-library(checkmate)
-library(Rcpp)
+library(condMVNorm)
 
 source("multiGroup/utils_factors_nGroups_1Cov.R")
 source("pmwg/messaging.R")

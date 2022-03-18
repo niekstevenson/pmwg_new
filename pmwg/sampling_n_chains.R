@@ -4,9 +4,6 @@ library(MASS) ## For matrix inverse.
 library(MCMCpack) #For inverse wishart
 library(lme4)
 library(parallel)
-library(abind)
-library(checkmate)
-library(Rcpp)
 library(mvtnorm) ## For the multivariate normal.
 library(condMVNorm)
 
