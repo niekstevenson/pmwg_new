@@ -1,7 +1,7 @@
 #Script for testing the recovery of the blocked covariance matrix
 
 rm(list = ls())
-source("variants/blocked.R")
+source("pmwg/variants/blocked.R")
 
 library(rtdists)
 

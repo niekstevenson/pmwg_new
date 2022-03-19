@@ -1,5 +1,5 @@
 source("pmwg/sampling.R")
-source("variants/standard.R")
+source("pmwg/variants/standard.R")
 library(magic)
 
 add_info_blocked <- function(sampler, prior, ...){

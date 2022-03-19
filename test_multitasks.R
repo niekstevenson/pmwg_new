@@ -1,7 +1,7 @@
 #Script for testing the recovery of joint models consisting of multiple tasks (can be done in standard or factors or whatever)
 
 rm(list = ls())
-source("variants/standard.R")
+source("pmwg/variants/standard.R")
 library(rtdists)
 
 joint_ll <- function(x, data){

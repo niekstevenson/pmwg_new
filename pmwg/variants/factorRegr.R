@@ -1,5 +1,5 @@
 source("pmwg/sampling.R")
-source("variants/factor.R")
+source("pmwg/variants/factor.R")
 
 add_info_factorRegr <- function(sampler, prior, ...){
   sampler <- add_info_factor(sampler, prior, ...)

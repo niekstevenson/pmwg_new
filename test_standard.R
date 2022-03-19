@@ -1,6 +1,8 @@
 #Script for recovering a typical experiment 
 
 rm(list = ls())
+source("pmwg/variants/standard.R")
+
 library(rtdists)
 
 log_likelihood=function(x,data, sample=F) {
@@ -66,7 +68,6 @@ priors <- list(
   theta_mu_mean = rep(0, length(pars)),
   theta_mu_var = diag(rep(1, length(pars)))
 )
-source("variants/standard.R")
 
 sampler <- pmwgs(
   data = data,
@@ -75,7 +76,7 @@ sampler <- pmwgs(
   ll_func = log_likelihood
 )
 
-sampler <- init(sampler, n_cores = 10) # i don't use any start points here
+sampler <- init(sampler) # i don't use any start points here
 burned <- run_stage(sampler, stage = "burn",iter = 500, particles = 100, n_cores = 10, pstar = .7)
 adapted <- run_stage(burned, stage = "adapt", iter = 1000, particles = 100, n_cores = 10, pstar =.7)
 sampled <- run_stage(adapted, stage = "sample", iter = 1000, particles = 100, n_cores = 15, pstar = .6)

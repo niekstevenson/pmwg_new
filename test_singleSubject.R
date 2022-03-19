@@ -2,7 +2,7 @@
 
 rm(list = ls())
 library(rtdists)
-source("pmwg/sampling_single.R")
+source("pmwg/variants/single.R")
 
 log_likelihood=function(x,data, sample=F) {
   x <- exp(x)
@@ -19,8 +19,8 @@ log_likelihood=function(x,data, sample=F) {
   out
 }
 
-n.trials = 200      #number trials per subject per conditions
-n.subj = 5        #number of subjects
+n.trials = 100      #number trials per subject per conditions
+n.subj = 5       #number of subjects
 n.cond = 3          #number of conditions
 
 
@@ -63,18 +63,12 @@ for (i in 1:n.subj){
 
 pars <- rownames(subj_random_effects)
 
-priors <- list(
-  theta_mu_mean = rep(0, length(pars)),
-  theta_mu_var = diag(rep(1, length(pars)))
-)
-
 
 sampler <- pmwgs(
   data = data,
   pars = pars,
-  prior = priors,
   ll_func = log_likelihood
 )
-sampler <- init_single(sampler, n_cores = 15) # i don't use any start points here
+sampler <- init(sampler, n_cores = 1) # i don't use any start points here
 # Sample! -------------------------------------------------------------------
-burned <- run_stage_single(sampler, stage = "burn",iter = 2000, particles = 100, n_cores = 16, pstar = .7)
+burned <- run_stage(sampler, stage = "burn",iter = 100, particles = 100, n_cores = 1, pstar = .7)

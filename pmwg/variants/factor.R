@@ -1,12 +1,12 @@
 source("pmwg/sampling.R")
-source("variants/standard.R")
+source("pmwg/variants/standard.R")
 
 add_info_factor <- function(sampler, prior, ...){
   # Checking and default priors
   args <- list(...)
   n_factors <- args$n_factors
   constraintMat <- args$constraintMat
-  
+  n_pars <- sampler$n_pars
   if (is.null(prior)) {
     prior <- list(theta_mu_mean = rep(0, n_pars), 
                   theta_mu_var = rep(1, n_pars),

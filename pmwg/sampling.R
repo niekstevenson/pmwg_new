@@ -16,11 +16,12 @@ pmwgs <- function(data, pars, ll_func, prior = NULL, ...) {
   sampler <- list(
     data = data,
     par_names = pars,
-    subjects = unique(data$subject),
+    subjects = subjects,
     n_pars = length(pars),
     n_subjects = length(subjects),
     ll_func = ll_func,
-    samples = samples
+    samples = samples,
+    init = FALSE
   )
   class(sampler) <- "pmwgs"
   sampler <- add_info(sampler, prior, ...)
@@ -28,22 +29,25 @@ pmwgs <- function(data, pars, ll_func, prior = NULL, ...) {
 }
 
 init <- function(pmwgs, start_mu = NULL, start_var = NULL,
-         display_progress = TRUE, particles = 1000, n_cores = 1, epsilon = NULL) {
+                 verbose = FALSE, particles = 1000, n_cores = 1, epsilon = NULL) {
   # Gets starting points for the mcmc process
   # If no starting point for group mean just use zeros
   startpoints <- get_startpoints(pmwgs, start_mu, start_var)
   if(n_cores > 1){
     proposals <- mclapply(X=1:pmwgs$n_subjects,FUN=start_proposals,start_mu = startpoints$tmu, 
-                        start_var = startpoints$tvar, n_particles = particles, pmwgs = pmwgs, mc.cores = n_cores)
+                          start_var = startpoints$tvar, n_particles = particles, pmwgs = pmwgs, mc.cores = n_cores)
   } else{
     proposals <- lapply(X=1:pmwgs$n_subjects,FUN=start_proposals,start_mu = startpoints$tmu, 
-               start_var = startpoints$tvar, n_particles = particles, pmwgs = pmwgs)
+                        start_var = startpoints$tvar, n_particles = particles, pmwgs = pmwgs)
   }
   proposals <- array(unlist(proposals), dim = c(pmwgs$n_pars + 2, pmwgs$n_subjects))
   
   # Sample the mixture variables' initial values.
+  if(is.null(epsilon)) epsilon <- rep(set_epsilon(pmwgs$n_pars, verbose), pmwgs$n_subjects)
+  if(length(epsilon) == 1) epsilon <- rep(epsilon, pmwgs$n_subjects)
   pmwgs$samples <- fill_samples(samples = pmwgs$samples, group_level = startpoints, proposals = proposals,
-                                epsilon = rep(set_epsilon(pmwgs$n_pars, epsilon)), j = 1, n_pars = pmwgs$n_pars)
+                                epsilon = epsilon, j = 1, n_pars = pmwgs$n_pars)
+  pmwgs$init <- TRUE
   return(pmwgs)
 }
 
@@ -94,9 +98,9 @@ new_particle <- function (s, data, num_particles, parameters, eff_mu = NULL,
   proposals[1, ] <- subj_mu
   lw <- apply(proposals, 1, likelihood_func, data = data[data$subject==subjects[s],])
   lp <- dmvnorm(x = proposals, mean = mu, sigma = var, 
-                         log = TRUE)
+                log = TRUE)
   prop_density <- dmvnorm(x = proposals, mean = subj_mu, 
-                                   sigma = var * (epsilon[s]^2))
+                          sigma = var * (epsilon[s]^2))
   if (mix_proportion[3] == 0) {
     eff_density <- 0
   }
@@ -118,29 +122,33 @@ run_stage <- function(pmwgs,
                       stage,
                       iter = 1000,
                       particles = 1000,
-                      display_progress = TRUE,
+                      verbose = TRUE,
                       n_cores = 1,
                       n_unique = ifelse(stage == "adapt", 20, NA),
+                      min_unique = ifelse(stage == "adapt", 200, NA),
                       epsilon = NULL,
                       pstar = NULL,
                       mix = NULL,
-                      pdist_update_n = ifelse(stage == "sample", 500, NA),
-                      epsilon_upper_bound = 2) {
+                      pdist_update_n = ifelse(stage == "sample", 50, NA),
+                      epsilon_upper_bound = 2,
+                      n_cores_conditional = 1) {
   # Set defaults for NULL values
-  mix <- set_mix(stage, mix)
+  mix <- set_mix(stage, mix, verbose)
   # Set necessary local variables
   .n_unique <- n_unique
-  n_unique <- 200
+  n_unique <- min_unique
   # Set stable (fixed) new_sample argument for this run
   n_pars <- length(pmwgs$par_names)
   
   # Display stage to screen
-  msgs <- list(
-    burn = "Phase 1: Burn in\n",
-    adapt = "Phase 2: Adaptation\n",
-    sample = "Phase 3: Sampling\n"
-  )
-  cat(msgs[[stage]])
+  if(verbose){
+    msgs <- list(
+      burn = "Phase 1: Burn in\n",
+      adapt = "Phase 2: Adaptation\n",
+      sample = "Phase 3: Sampling\n"
+    )
+    cat(msgs[[stage]])
+  }
   
   alphaStar=-qnorm(pstar/2) #Idk about this one
   n0=round(5/(pstar*(1-pstar))) #Also not questioning this math for now
@@ -154,7 +162,7 @@ run_stage <- function(pmwgs,
   # Build new sample storage
   pmwgs <- extend_sampler(pmwgs, iter, stage)
   # create progress bar
-  if (display_progress) {
+  if (verbose) {
     pb <- accept_progress_bar(min = 0, max = iter)
   }
   start_iter <- pmwgs$samples$idx
@@ -166,15 +174,20 @@ run_stage <- function(pmwgs,
   # Main iteration loop
   for (i in 1:iter) {
     accRate <- mean(accept_rate(pmwgs))
-    if (display_progress) {
+    if (verbose) {
       update_progress_bar(pb, i, extra = accRate)
     }
     # Create/update efficient proposal distribution if we are in sampling phase.
     if(stage == "sample" & (i %% pdist_update_n == 0 || i == 1)){
       test_samples <- extract_samples(pmwgs, stage = c("adapt", "sample"))
       iteration <- dim(test_samples$theta_mu)[2]
-      conditionals=lapply(X = 1:pmwgs$n_subjects,FUN = get_conditionals,samples = test_samples, 
-                          n_pars, iteration)
+      if(n_cores_conditional > 1){
+        conditionals=mclapply(X = 1:pmwgs$n_subjects,FUN = get_conditionals,samples = test_samples, 
+                              n_pars, iteration, mc.cores = n_cores_conditional)
+      } else{
+        conditionals=lapply(X = 1:pmwgs$n_subjects,FUN = get_conditionals,samples = test_samples, 
+                            n_pars, iteration)
+      }
       conditionals <- simplify2array(conditionals)
       eff_mu <- do.call(cbind, conditionals[1,])
       eff_var <- abind(conditionals[2,], along = 3)
@@ -183,19 +196,19 @@ run_stage <- function(pmwgs,
     pars <- gibbs_step(pmwgs)
     if(n_cores > 1){
       proposals=mclapply(X=1:pmwgs$n_subjects,FUN = new_particle, data, particles, pars, eff_mu, 
-                   eff_var, mix, pmwgs$ll_func, epsilon, subjects, mc.cores =n_cores)
+                         eff_var, mix, pmwgs$ll_func, epsilon, subjects, mc.cores =n_cores)
     } else{
       proposals=lapply(X=1:pmwgs$n_subjects, FUN = new_particle, data, particles, pars, eff_mu, 
-                 eff_var, mix, pmwgs$ll_func, epsilon, subjects)
+                       eff_var, mix, pmwgs$ll_func, epsilon, subjects)
     }
     proposals <- array(unlist(proposals), dim = c(pmwgs$n_pars + 2, pmwgs$n_subjects))
-
-
-
+    
+    
+    
     #Fill samples
     j <- start_iter + i
     pmwgs$samples <- fill_samples(samples = pmwgs$samples, group_level = pars,
-                            proposals = proposals, epsilon = epsilon, j = j, n_pars = pmwgs$n_pars)
+                                  proposals = proposals, epsilon = epsilon, j = j, n_pars = pmwgs$n_pars)
     
     #Update epsilon
     if(!is.null(pstar)){
@@ -206,7 +219,7 @@ run_stage <- function(pmwgs,
     }
     
     if (stage == "adapt") {
-      res <- test_sampler_adapted(pmwgs, n_unique, i, n_cores, get_conditionals)
+      res <- test_sampler_adapted(pmwgs, n_unique, i, n_cores_conditional, get_conditionals, verbose)
       if (res == "success") {
         break
       } else if (res == "increase") {
@@ -214,7 +227,7 @@ run_stage <- function(pmwgs,
       }
     }
   }
-  if (display_progress) close(pb)
+  if (verbose) close(pb)
   if (stage == "adapt") {
     if (i == iter) {
       message(paste(
@@ -230,7 +243,7 @@ run_stage <- function(pmwgs,
   return(pmwgs)
 }
 
-test_sampler_adapted <- function(pmwgs, n_unique, i, n_cores, conditionals_func) {
+test_sampler_adapted <- function(pmwgs, n_unique, i, n_cores_conditional, conditionals_func, verbose = T) {
   n_pars <- length(pmwgs$par_names)
   if (i < n_unique) {
     return("continue")
@@ -245,18 +258,28 @@ test_sampler_adapted <- function(pmwgs, n_unique, i, n_cores, conditionals_func)
   # all subjects is greater than unq_vals
   n_unique_sub <- lapply(lapply(first_par_list, unique), length)
   if (all(n_unique_sub > n_unique)) {
-    message("Enough unique values detected: ", n_unique)
-    message("Testing proposal distribution creation")
+    if(verbose){
+      message("Enough unique values detected: ", n_unique)
+      message("Testing proposal distribution creation")
+    }
     attempt <- tryCatch({
-      lapply(X = 1:pmwgs$n_subjects,FUN = conditionals_func,samples = test_samples, n_pars, i)
+      if(n_cores_conditional > 1){
+        mclapply(X = 1:pmwgs$n_subjects,FUN = conditionals_func,samples = test_samples, 
+                 n_pars, i, mc.cores = n_cores_conditional)
+      } else{
+        lapply(X = 1:pmwgs$n_subjects,FUN = conditionals_func,samples = test_samples, 
+               n_pars, i)
+      }
     },error=function(e) e, warning=function(w) w)
     if (any(class(attempt) %in% c("warning", "error", "try-error"))) {
-      warning("An problem was encountered creating proposal distribution")
-      warning("Increasing required unique values and continuing adaptation")
+      if(verbose){
+        warning("A problem was encountered creating proposal distribution")
+        warning("Increasing required unique values and continuing adaptation")
+      }
       return("increase")
     }
     else {
-      message("Successfully adapted after ", i, "iterations - stopping early")
+      if(verbose) message("Successfully adapted after ", i, "iterations - stopping early")
       return("success")
     }
   }
@@ -277,7 +300,7 @@ update.epsilon<- function(epsilon2, acc, p, i, d, alpha) {
   return(exp(Theta))
 }
 
-set_epsilon <- function(n_pars, epsilon) {
+set_epsilon <- function(n_pars, verbose = T) {
   if (n_pars > 15) {
     epsilon <- 0.1
   } else if (n_pars > 10) {
@@ -285,17 +308,17 @@ set_epsilon <- function(n_pars, epsilon) {
   } else {
     epsilon <- 0.5
   }
-  message(sprintf("Epsilon has been set to %.1f based on number of parameters",epsilon))
+  if(verbose) message(sprintf("Epsilon has been set to %.1f based on number of parameters",epsilon))
   return(epsilon)
 }
 
-set_mix <- function(stage, mix) {
+set_mix <- function(stage, mix, verbose) {
   if (stage == "sample") {
     mix <- c(0.1, 0.2, 0.7)
   } else {
     mix <- c(0.5, 0.5, 0.0)
   }
-  message(sprintf("mix has been set to c(%s) based on the stage being run",  paste(mix, collapse = ", ")))
+  if(verbose) message(sprintf("mix has been set to c(%s) based on the stage being run",  paste(mix, collapse = ", ")))
   return(mix)
 }
 

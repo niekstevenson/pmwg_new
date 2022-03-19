@@ -1,7 +1,7 @@
 #Script for testing the recovery of factor pmwg s
 
 rm(list = ls())
-source("variants/factorRegr.R")
+source("pmwg/variants/factorRegr.R")
 
 ll <- function(pars, data){
   n_pars <- length(pars)
