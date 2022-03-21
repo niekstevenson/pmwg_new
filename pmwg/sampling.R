@@ -1,11 +1,13 @@
 ### This is the pmwg sampler for standard puproses. It includes a multivariate normal with full covariance matrix on the group level. 
 
-library(MASS) ## For matrix inverse.
-library(MCMCpack) #For inverse wishart
-library(lme4)
-library(parallel)
-library(mvtnorm) ## For the multivariate normal.
-library(condMVNorm)
+require(MASS) ## For matrix inverse.
+require(MCMCpack) #For inverse wishart
+require(lme4)
+require(parallel)
+require(mvtnorm) ## For the multivariate normal.
+require(condMVNorm)
+require(magic)
+require(abind)
 
 source("pmwg/messaging.R")
 

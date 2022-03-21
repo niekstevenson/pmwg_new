@@ -31,6 +31,7 @@ pmwgs <- function(data, pars, ll_func, prior = NULL) {
     samples = samples,
     init = FALSE
   )
+  class(sampler) <- "pmwgs"
   sampler
 }
 
