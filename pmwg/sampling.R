@@ -190,9 +190,9 @@ run_stage <- function(pmwgs,
         conditionals=lapply(X = 1:pmwgs$n_subjects,FUN = get_conditionals,samples = test_samples, 
                             n_pars, iteration)
       }
-      conditionals <- simplify2array(conditionals)
-      eff_mu <- do.call(cbind, conditionals[1,])
-      eff_var <- abind(conditionals[2,], along = 3)
+      conditionals <- array(unlist(conditionals), dim = c(pmwgs$n_pars, pmwgs$n_pars + 1, pmwgs$n_subjects))
+      eff_mu <- conditionals[,1,] #First column is the means
+      eff_var <- conditionals[,2:(n_pars+1),] #Other columns are the variances
     }
     
     pars <- gibbs_step(pmwgs)
@@ -382,9 +382,9 @@ trim_na <- function(sampler) {
     dimensions <- length(dim(obj))
     if(dimensions > 1 & obj_name != "last_theta_var_inv"){ #Ok not the cleanest
       if(dimensions == 2){ #There must be a cleaner way to to do this
-        obj <- obj[,1:idx]
+        obj <- obj[,1:idx, drop = F]
       } else{
-        obj <- obj[,,1:idx]
+        obj <- obj[,,1:idx, drop = F]
       }
       sampler$samples[[obj_name]] <- obj
     }
