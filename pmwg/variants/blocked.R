@@ -64,7 +64,7 @@ gibbs_step_blocked <- function(sampler){
     names(tmu) <- sampler$par_names[group_idx]
     
     # New values for group var
-    theta_temp <- last$alpha - tmu
+    theta_temp <- matrix(last$alpha - tmu, nrow = n_pars, ncol = sampler$n_subjects)
     cov_temp <- (theta_temp) %*% (t(theta_temp))
     B_half <- 2 * hyper$v_half * diag(1 / last$a_half) + cov_temp # nolint
     tvar <- riwish(hyper$v_half + n_pars - 1 + sampler$n_subjects, B_half) # New sample for group variance
@@ -99,11 +99,11 @@ get_conditionals_blocked <- function(s, samples, n_pars, iteration){
 
 last_sample_blocked <- function(store, group_idx) {
   list(
-    tmu = store$theta_mu[group_idx, store$idx],
-    tvar = store$theta_var[group_idx, group_idx,store$idx],
-    alpha = store$alpha[group_idx,, store$idx],
-    tvinv = store$last_theta_var_inv[group_idx,group_idx],
-    a_half = store$a_half[group_idx,store$idx]
+    tmu = store$theta_mu[group_idx, store$idx, drop = F],
+    tvar = store$theta_var[group_idx, group_idx,store$idx, drop = F],
+    alpha = store$alpha[group_idx,, store$idx, drop = F],
+    tvinv = store$last_theta_var_inv[group_idx,group_idx, drop = F],
+    a_half = store$a_half[group_idx,store$idx, drop = F]
   )
 }
 
