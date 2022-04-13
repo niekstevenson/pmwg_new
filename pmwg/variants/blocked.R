@@ -53,26 +53,46 @@ gibbs_step_blocked <- function(sampler){
     prior <- sampler$prior
     
     n_pars <- sum(group_idx)
+    if(n_pars > 1){
+      # Here mu is group mean, so we are getting mean and variance
+      var_mu <- ginv(sampler$n_subjects * last$tvinv + prior$theta_mu_invar[group_idx, group_idx])
+      mean_mu <- as.vector(var_mu %*% (last$tvinv %*% apply(last$alpha, 1, sum) +
+                                         prior$theta_mu_invar[group_idx, group_idx] %*% prior$theta_mu_mean[group_idx]))
+      
+      attempt <- tryCatch({
+        chol_var_mu <- t(chol(var_mu)) # t() because I want lower triangle.
+      },error=function(e) e, warning=function(w) w)
+      if (any(class(attempt) %in% c("warning", "error", "try-error"))) {
+        var_mu <- nearPD(var_mu, base.matrix = T)$mat
+        chol_var_mu <- t(chol(var_mu)) #sth with loss of significance
+      }
+      # New sample for mu.
+      tmu <- rmvnorm(1, mean_mu, chol_var_mu %*% t(chol_var_mu))[1, ]
+      names(tmu) <- sampler$par_names[group_idx]
+      
+      # New values for group var
+      theta_temp <- matrix(last$alpha - tmu, nrow = n_pars, ncol = sampler$n_subjects)
+      cov_temp <- (theta_temp) %*% (t(theta_temp))
+      B_half <- 2 * hyper$v_half * diag(1 / last$a_half) + cov_temp # nolint
+      tvar <- riwish(hyper$v_half + n_pars - 1 + sampler$n_subjects, B_half) # New sample for group variance
+      tvinv <- ginv(tvar)
+      
+      # Sample new mixing weights.
+      a_half <- 1 / rgamma(n = n_pars,shape = (hyper$v_half + n_pars) / 2,
+                           rate = hyper$v_half * diag(tvinv) + hyper$A_half)
+    } else{
+      var_mu = 1.0 / (sampler$n_subjects * last$tvinv + prior$theta_mu_invar[group_idx, group_idx])
+      mean_mu = var_mu * ((apply(last$alpha, 1, sum) * last$tvinv + prior$theta_mu_invar[group_idx, group_idx] * prior$theta_mu_mean[group_idx]))
+      tmu <- rnorm(n_pars, mean_mu, sd = sqrt(var_mu))
+      names(tmu) <- sampler$par_names[group_idx]
+      tvinv = rgamma(n=n_pars, shape=hyper$v_half/2 + sampler$n_subjects/2, rate=hyper$v_half/last$a_half + 
+                       rowSums( (last$alpha-tmu)^2 ) / 2)
+      tvar = 1/tvinv
+      #Contrary to standard pmwg I use shape, rate for IG()
+      a_half <- 1 / rgamma(n = n_pars, shape = (hyper$v_half + n_pars) / 2,
+                           rate = hyper$v_half * tvinv + 1/(hyper$A_half^2))
+    }
     
-    # Here mu is group mean, so we are getting mean and variance
-    var_mu <- ginv(sampler$n_subjects * last$tvinv + prior$theta_mu_invar[group_idx, group_idx])
-    mean_mu <- as.vector(var_mu %*% (last$tvinv %*% apply(last$alpha, 1, sum) +
-                                       prior$theta_mu_invar[group_idx, group_idx] %*% prior$theta_mu_mean[group_idx]))
-    chol_var_mu <- t(chol(var_mu)) # t() because I want lower triangle.
-    # New sample for mu.
-    tmu <- rmvnorm(1, mean_mu, chol_var_mu %*% t(chol_var_mu))[1, ]
-    names(tmu) <- sampler$par_names[group_idx]
-    
-    # New values for group var
-    theta_temp <- matrix(last$alpha - tmu, nrow = n_pars, ncol = sampler$n_subjects)
-    cov_temp <- (theta_temp) %*% (t(theta_temp))
-    B_half <- 2 * hyper$v_half * diag(1 / last$a_half) + cov_temp # nolint
-    tvar <- riwish(hyper$v_half + n_pars - 1 + sampler$n_subjects, B_half) # New sample for group variance
-    tvinv <- ginv(tvar)
-    
-    # Sample new mixing weights.
-    a_half <- 1 / rgamma(n = n_pars,shape = (hyper$v_half + n_pars) / 2,
-                         rate = hyper$v_half * diag(tvinv) + hyper$A_half)
     tmu_out[(idx+1):(idx+n_pars)] <- tmu
     a_half_out[(idx+1):(idx+n_pars)] <- a_half
     tvar_out[(idx+1):(idx+n_pars), (idx+1):(idx+n_pars)] <- tvar
