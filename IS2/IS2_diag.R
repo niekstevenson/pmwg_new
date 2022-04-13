@@ -1,4 +1,4 @@
-## standard IS2 written by Reilly Innes and David Gunawan, from Tran et al. 2021 
+## diag IS2 written by Niek Stevenson heavily inspired by Reilly Innes and David Gunawan, from Tran et al. 2021 
 ## set up environment and packages 
 rm(list=ls())
 library(mvtnorm)
@@ -14,28 +14,12 @@ library(corpcor) #RJI_change: not sure if this was included before
 load("~/Documents/UVA/2021/pmwg_new/samples/LBA_25subs_0factors_.RData")
 data <- sampled$data
 
-log_likelihood=function(x,data, sample=TRUE) {
-  x <- exp(x)
-  bPars <- grep("b", names(x))
-  bs <- x["A"]+x[bPars][data$condition]
-  if (sample) { #for sampling
-    out=rLBA(n=nrow(data),A=x["A"],b=bs,t0=x["t0"],mean_v=x[c("v1","v2")],sd_v=c(1,1),distribution="norm",silent=TRUE)
-  } else { #for calculating density
-    out=dLBA(rt=data$rt,response=data$resp,A=x["A"],b=bs,t0=x["t0"],mean_v=x[c("v1","v2")],sd_v=c(1,1),distribution="norm",silent=TRUE)
-    bad=(out<1e-10)|(!is.finite(out))
-    out[bad]=1e-10
-    out=sum(log(out))
-  }
-  out
-}
-
 ###### set up variables #####
 # number of particles, samples, subjects, random effects etc
 n_randeffect=sampled$n_pars
 n_subjects = sampled$n_subjects
 n_iter = length(sampled$samples$stage[sampled$samples$stage=="sample"])
 length_draws = sampled$samples$idx # length of the full transformed random effect vector and/or parameter vector
-v_alpha = 2  
 pars = sampled$par_names
 
 # grab the sampled stage of PMwG
@@ -49,69 +33,22 @@ sig <- sampled$samples$theta_var[,,sampled$samples$stage=="sample"]
 # The a is a random sample from inv gamma which weights the inv wishart. The mix of inverse wisharts is the prior on the correlation matrix
 a_half <- log(sampled$samples$a_half[,sampled$samples$stage=="sample"])
 
-unwind=function(x,reverse=FALSE) {
-  
+unwind <- function(x,reverse=FALSE, diag = TRUE) {
   if (reverse) {
-    ## if ((n*n+n)!=2*length(x)) stop("Wrong sizes in unwind.")
-    n=sqrt(2*length(x)+0.25)-0.5 ## Dim of matrix.
-    out=array(0,dim=c(n,n))
-    out[lower.tri(out,diag=TRUE)]=x
-    diag(out)=exp(diag(out))
-    out=out%*%t(out)
-    # out[is.na(out)]<-1e-10
-    # out[is.infinite(out)]<-1e-10
+    if(diag){
+      out <- diag(exp(x), nrow = lenght(x))
+    } else{
+      out <- exp(x)
+    }
   } else {
-    y=t(base::chol(x))
-    diag(y)=log(diag(y))
-    out=y[lower.tri(y,diag=TRUE)]
+    out <- log(diag(x))
   }
   return(out)
 }
 
-robust_diwish = function (W, v, S) { #RJI_change: this function is to protect against weird proposals in the diwish function, where sometimes matrices weren't pos def
-  if (!is.matrix(S)) 
-    S <- matrix(S)
-  if (nrow(S) != ncol(S)) {
-    stop("S not square in diwish().\n")
-  }
-  if (!is.matrix(W)) 
-    W <- matrix(W)
-  if (nrow(W) != ncol(W)) {
-    stop("W not square in diwish().\n")
-  }
-  if (nrow(S) != ncol(W)) {
-    stop("W and X of different dimensionality in diwish().\n")
-  }
-  if (v < nrow(S)) {
-    stop("v is less than the dimension of S in  diwish().\n")
-  }
-  p <- nrow(S)
-  gammapart <- sum(lgamma((v + 1 - 1:p)/2))
-  ldenom <- gammapart + 0.5 * v * p * log(2) + 0.25 * p * (p - 1) * log(pi)
-  if (corpcor::is.positive.definite(W, tol=1e-8)){
-    cholW<-base::chol(W)
-  }else{
-    return(1e-10)
-  }
-  if (corpcor::is.positive.definite(S, tol=1e-8)){
-    cholS <- base::chol(S)
-  }else{
-    return(1e-10)
-  }
-  
-  #cholW <- tryCatch(chol(W),error= return(1e-10))   
-  halflogdetS <- sum(log(diag(cholS)))
-  halflogdetW <- sum(log(diag(cholW)))
-  invW <- chol2inv(cholW)
-  exptrace <- sum(S * invW)
-  lnum <- v * halflogdetS - (v + p + 1) * halflogdetW - 0.5 * exptrace
-  lpdf <- lnum - ldenom
-  return(exp(lpdf))
-}
-
 #unwound sigma
 pts2.unwound = apply(sig,3,unwind)
-n.params<- n_randeffect+nrow(pts2.unwound)+n_randeffect
+n.params<- nrow(theta) + nrow(pts2.unwound)+ nrow(a_half)
 all_samples=array(dim=c(n_subjects,n.params,n_iter))
 mu_tilde=array(dim = c(n_subjects,n.params))
 sigma_tilde=array(dim = c(n_subjects,n.params,n.params))
@@ -122,12 +59,6 @@ for (j in 1:n_subjects){
   mu_tilde[j,] =apply(all_samples[j,,],1,mean)
   # calculate the covariance matrix for random effects, mu and sigma
   sigma_tilde[j,,] = cov(t(all_samples[j,,]))
-}
-
-for(i in 1:n_subjects){ #RJI_change: this bit makes sure that the sigma tilde is pos def
-  if(!corpcor::is.positive.definite(sigma_tilde[i,,], tol=1e-8)){
-    sigma_tilde[i,,]<-corpcor::make.positive.definite(sigma_tilde[i,,], tol=1e-6)
-  }
 }
 
 X <- cbind(t(theta),t(pts2.unwound),t(a_half)) 
@@ -146,9 +77,9 @@ prop_theta=mvtnorm::rmvt(IS_samples,sigma = sigmaX, df=df, delta=muX) #RJI_chang
 
 group_dist = function(random_effect = NULL, parameters, sample = FALSE, n_samples = NULL, n_randeffect){
   param.theta.mu <- parameters[1:n_randeffect]
-  ##scott would like it to ask for n(unwind) rather than doing the calculation for how many it actually needs, you should just input the length of the unwound object
   param.theta.sig.unwound <- parameters[(n_randeffect+1):(length(parameters)-n_randeffect)] 
-  param.theta.sig2 <- unwind(param.theta.sig.unwound, reverse = TRUE)
+  param.theta.sig2 <- unwind(param.theta.sig.unwound, reverse = TRUE) 
+  #dmvnorm will be slow, because since it's a diagonal matrix, multiple dnorm calls would be quicker
   if (sample){
     return(mvtnorm::rmvnorm(n_samples, param.theta.mu,param.theta.sig2))
   }else{
@@ -159,20 +90,18 @@ group_dist = function(random_effect = NULL, parameters, sample = FALSE, n_sample
 
 prior_dist = function(parameters, prior_parameters = sampled$prior, n_randeffect){ ###mod notes: the sampled$prior needs to be fixed/passed in some other time
   param.theta.mu <- parameters[1:n_randeffect]
-  param.theta.sig.unwound <- parameters[(n_randeffect+1):(length(parameters)-n_randeffect)] ##scott would like it to ask for n(unwind)
-  param.theta.sig2 <- unwind(param.theta.sig.unwound, reverse = TRUE)
+  param.theta.sig.unwound <- parameters[(n_randeffect+1):(length(parameters)-n_randeffect)] 
+  param.theta.sig2 <- unwind(param.theta.sig.unwound, reverse = TRUE, diag = FALSE)
   param.a <- exp(parameters[((length(parameters)-n_randeffect)+1):(length(parameters))])
-  v_alpha=2
+  v_half <- 2
+  a_half <- 1
   log_prior_mu=mvtnorm::dmvnorm(param.theta.mu, mean = prior_parameters$theta_mu_mean, sigma = prior_parameters$theta_mu_var, log =TRUE)
-  log_prior_sigma = log(robust_diwish(param.theta.sig2, v=v_alpha+ n_randeffect-1, S = 2*v_alpha*diag(1/param.a)))  #exp of a-half -> positive only
-  log_prior_a = sum(invgamma::dinvgamma(param.a,scale = 0.5,shape=1,log=TRUE))
-  jac_a <- -sum(log(param.a)) # Jacobian determinant of transformation of log of the a-half
-  jac_theta_sig <- -(log(2^n_randeffect)+sum((n_randeffect:1+1)*log(diag(param.theta.sig2)))) # Jacobian determinant of cholesky factors of cov matrix
-  
-  return(log_prior_mu + log_prior_sigma + log_prior_a - jac_theta_sig - jac_a)
+  log_prior_sigma = sum(invgamma::dinvgamma(param.theta.sig2, shape = v_alpha/2, rate = v_alpha/param.a, log = T))
+  log_prior_a = sum(invgamma::dinvgamma(param.a,scale = 1/2,shape=1/(a_half^2),log=TRUE))
+  jac_a <- -sum(log(param.a))
+  jac_sig <- -sum(log(1/param.theta.sig2))
+  return(log_prior_mu + log_prior_sigma + log_prior_a - jac_a - jac_sig)
 }
-
-#importance_particles <- array(dim=c(IS_samples,n_particles,n_subjects))
 
 get_logp=function(prop_theta,data,n_subjects,n_particles,n_randeffect,mu_tilde,sigma_tilde,i, group_dist=group_dist){
   # make an array for the density

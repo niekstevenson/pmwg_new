@@ -75,7 +75,7 @@ sampler <- pmwgs(
   prior = priors,
   ll_func = log_likelihood
 )
-
+debug(base::chol)
 sampler <- init(sampler) # i don't use any start points here
 burned <- run_stage(sampler, stage = "burn",iter = 500, particles = 100, n_cores = 10, pstar = .7)
 adapted <- run_stage(burned, stage = "adapt", iter = 1000, particles = 100, n_cores = 10, pstar =.7)

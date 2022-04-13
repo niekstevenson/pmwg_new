@@ -129,8 +129,8 @@ prior_dist = function(parameters, priors = sampled$prior, n_randeffect){ ###mod 
   
   jac_sig_err_inv <- -sum(log(param.sig_err_inv)) # Jacobian determinant of transformation of log of the sig_err_inv  
   jac_psi_inv <- -sum(log(param.psi_inv)) # Jacobian determinant of transformation of log of the psi_inv
-  #Jacobians are actually part of the denominator (dnorm(prop_theta)) since transformations of the data (rather than parameters),
-  #Warrant a jacobian added. But we add the jacobians here for ease of calculations. 
+  # Jacobians are actually part of the denominator (dnorm(prop_theta)) since transformations of the data (rather than parameters),
+  # warrant a jacobian added. But we add the jacobians here for ease of calculations. 
   return(log_prior_mu + log_prior_sig_err_inv + log_prior_psi_inv + log_prior_lambda - jac_psi_inv - jac_sig_err_inv)
 }
 

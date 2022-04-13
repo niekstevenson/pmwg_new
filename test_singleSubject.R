@@ -20,7 +20,7 @@ log_likelihood=function(x,data, sample=F) {
 }
 
 n.trials = 100      #number trials per subject per conditions
-n.subj = 5       #number of subjects
+n.subj = 2       #number of subjects
 n.cond = 3          #number of conditions
 
 
@@ -71,4 +71,8 @@ sampler <- pmwgs(
 )
 sampler <- init(sampler, n_cores = 1) # i don't use any start points here
 # Sample! -------------------------------------------------------------------
-burned <- run_stage(sampler, stage = "burn",iter = 100, particles = 100, n_cores = 1, pstar = .7)
+source("pmwg/variants/single.R")
+burned <- run_stage(sampler, stage = "burn",iter = 1000, particles = 100, n_cores = 1, pstar = .7, epsilon = 1, verbose = T)
+# burned <- run_stage(burned, stage = "burn",iter = 100, particles = 100, n_cores = 2, pstar = .7)
+
+matplot(t(burned$samples$alpha[,1,]), type = "l")
