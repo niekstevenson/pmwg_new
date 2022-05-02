@@ -1,8 +1,8 @@
 rm(list = ls())
-source("multiGroup/sampling_nested.R")
+source("pmwg/variants/nested.R")
 
 n.trials <- 100
-n.subj <- 20
+n.subj <- 10
 n.groups <- 10
 n.pars <- 4
 
@@ -22,10 +22,10 @@ names(top_par_mu) <- paste0("V", 1:n.pars)
 
 #Fill in some values
 top_corMat <- matrix(c(.4, .25, .1, -.3,
-                      .25, .6, -.1, .18,
-                      .1, -.1, .5, .45,
-                      -.3, .18, .45, .3), 
-                 nrow = n.pars, ncol = n.pars)
+                       .25, .6, -.1, .18,
+                       .1, -.1, .5, .45,
+                       -.3, .18, .45, .3), 
+                     nrow = n.pars, ncol = n.pars)
 rownames(top_corMat) <- colnames(top_corMat) <- names(top_par_mu)
 top_corMat <- sdcor2cov(top_corMat)
 
@@ -54,19 +54,26 @@ colMeans(all_data)
 
 pars <- names(top_par_mu)
 
-priors <- list(
-  theta_mu_mean = rep(0, length(pars)),
-  theta_mu_var = diag(rep(1, length(pars)))
+pop_args <- list(
+  variant = "pmwg/variants/factor.R",
+  n_factors = 2
 )
+
+group_args <- list(
+  variant = "pmwg/variants/diag.R"
+)
+
 sampler <- pmwgs(
   data = all_data,
   pars = pars,
-  prior = priors,
-  ll_func = ll
+  ll_func = ll,
+  pop_lvl = pop_args,
+  group_lvl = group_args
 )
 
-sampler <- init(sampler, n_cores = 15) # i don't use any start points here
+sampler <- init(sampler, n_cores = 10) # i don't use any start points here
 # Sample! -------------------------------------------------------------------
-burned <- run_stage(sampler, stage = "burn",iter = 2500, particles = 100, n_cores = 15, pstar = .7)
-adapted <- run_stage(burned, stage = "adapt", iter = 10000, particles = 100, n_cores = 15, pstar =.7)
-sampled <- run_stage(adapted, stage = "sample", iter = 2000, particles = 100, n_cores = 15, pstar = .7)
+source("pmwg/variants/nested.R")
+burned <- run_stage(sampler, stage = "burn",iter = 250, particles = 100, n_cores = 10, pstar = .7)
+adapted <- run_stage(burned, stage = "adapt", iter = 1000, particles = 100, n_cores = 15, pstar =.7, min_unique = 100)
+sampled <- run_stage(adapted, stage = "sample", iter = 500, particles = 100, n_cores = 15, pstar = .7)

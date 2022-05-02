@@ -2,7 +2,7 @@
 
 rm(list = ls())
 library(rtdists)
-source("multiGroup/sampling_factors_nGroups_1Cov.R")
+source("pmwg/variants/factor_groups.R")
 
 log_likelihood=function(x,data, sample=F) {
   x <- exp(x)
@@ -19,8 +19,8 @@ log_likelihood=function(x,data, sample=F) {
   out
 }
 
-n.trials = 75       #number trials per subject per conditions
-n.subj = 10          #number of subjects
+n.trials = 70       #number trials per subject per conditions
+n.subj = 16          #number of subjects
 n.cond = 3          #number of conditions
 
 
@@ -73,7 +73,7 @@ priors <- list(
 )
 
 
-source("multiGroup/sampling_factors_nGroups_1Cov.R")
+source("pmwg/variants/factor_groups.R")
 data$group <- rep(c(1,2), each = nrow(data)/2)
 pars <- rownames(subj_random_effects)
 
@@ -91,13 +91,12 @@ sampler <- pmwgs(
   par_idx = par_idx
 )
 # start the sampler ---------------------------------------------------------
-
-sampler <- init(sampler, n_cores = 12) # i don't use any start points here
+sampler <- init(sampler, n_cores = 1) # i don't use any start points here
 
 # Sample! -------------------------------------------------------------------
-burned <- run_stage(sampler, stage = "burn",iter = 500, particles = 100, n_cores =12, pstar = .6)
+burned <- run_stage(sampler, stage = "burn",iter = 250, particles = 100, n_cores = 8, pstar = .6)
 save(burned, file = paste0("./samples/LBA_", n.subj, "subs_", k, "factors_.RData"))
-adapted <- run_stage(burned, stage = "adapt", iter = 5000, particles = 100, n_cores = 12, pstar = .6)
+adapted <- run_stage(burned, stage = "adapt", iter = 500, particles = 100, n_cores = 8, pstar = .6, min_unique = 100)
 sampled <- run_stage(adapted, stage = "sample", iter = 1000, particles = 100, n_cores = 12, pstar = .6)
 save(sampled, file = paste0("./samples/LBA_", n.subj, "subs_", k, "factors_.RData"))
 

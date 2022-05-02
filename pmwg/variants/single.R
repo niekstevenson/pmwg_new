@@ -19,7 +19,9 @@ pmwgs <- function(data, pars, ll_func, prior = NULL) {
     prior <- list(theta_mu_mean = rep(0, n_pars), theta_mu_var = diag(rep(1, n_pars)))
   }
   
-  prior$theta_mu_invar <- 1/prior$theta_mu_var #Inverse of the matrix
+  if(is.null(dim(prior$theta_mu_var))){
+    prior$theta_mu_var <- diag(prior$theta_mu_var, n_pars)
+  }
   sampler <- list(
     data = data,
     par_names = pars,
@@ -125,12 +127,10 @@ run_stage <- function(pmwgs,
                       epsilon_upper_bound = 20,
                       mix = NULL) {
   # Set defaults for NULL values
-  mix <- c(0.05, 0.95)
+  if(is.null(mix)) mix <- c(0.05, 0.95)
   # Set stable (fixed) new_sample argument for this run
   n_pars <- length(pmwgs$par_names)
-  
-  if(pmwgs$n_subjects == 1) verbose = F
-  # Display stage to screen
+    # Display stage to screen
   if(verbose){
     msgs <- list(
       burn = "Phase 1: Burn in\n",
@@ -165,7 +165,6 @@ run_stage <- function(pmwgs,
   n_subjects <- pmwgs$n_subjects
   
   var_samples <- replicate(n_subjects, prior_var)
-  mean_samples <- replicate(n_subjects, prior_mu)
   # Main iteration loop
   for (i in 1:iter) {
     if (verbose) {
@@ -173,7 +172,7 @@ run_stage <- function(pmwgs,
     }
     
     j <- start_iter + i
-    mean_samples <- pmwgs$samples$alpha[,,j-1]
+    mean_samples <- matrix(pmwgs$samples$alpha[,,j-1], nrow = n_pars, ncol = n_subjects)
     if(n_cores > 1){
       proposals=mclapply(X=1:pmwgs$n_subjects,FUN = new_particle_single, data, particles, prior_mu, prior_var,
                          mean_samples, var_samples, mix, pmwgs$ll_func, epsilon, subjects, mc.cores = n_cores)

@@ -9,7 +9,7 @@ ll <- function(pars, data){
 }
 
 n_pars <- 15 # j = 1... p; # p with j = 1... p 
-n_subjects <-25; # n
+n_subjects <-30; # n
 n_trials <- 200      #number trials per subject per conditions
 n_factors <- 2
 
@@ -31,21 +31,26 @@ for(j in 1:n_subjects){
 
 ##Factor 
 # Create the Particle Metropolis within Gibbs sampler object ------------------
-k <- 2
 sampler <- pmwgs(
   data = all_data,
   pars = parNames,
   ll_func = ll,
-  n_factors = k
+  n_factors = n_factors
 )
+
+n_cores <- 8
+
 # start the sampler ---------------------------------------------------------
-sampler <- init(sampler, n_cores = 1, verbose = T) # i don't use any start points here
+sampler <- init(sampler, n_cores = n_cores) # i don't use any start points here
 
 # Sample! -------------------------------------------------------------------
-burned <- run_stage(sampler, stage = "burn",iter = 500, particles = 150, n_cores =8, pstar = .6, verbose = T)
-save(burned, file = "FirstAttemptStandard.RData")
-adapted <- run_stage(burned, stage = "adapt",iter = 1500, particles = 150, n_cores =8, pstar = .6, min_unique = 50, n_cores_conditional = 6)
-sampled <- run_stage(adapted, stage = "sample",iter = 1500, particles = 150, n_cores =8, pstar = .6, n_cores_conditional = 6, verbose = F)
-save(sampled, file = paste0("samples/factor_", k, "F_", n_subjects, "S_", n_pars, "P_FactRecovery.RData"))
+burned <- run_stage(sampler, stage = "burn",iter = 500, particles = 150, n_cores = n_cores , pstar = .6)
+save(burned, file = paste0("samples/factor_", n_factors, "F_", n_subjects, "S_", n_pars, "P_FactRecovery.RData"))
+
+adapted <- run_stage(burned, stage = "adapt",iter = 1500, particles = 150, n_cores = n_cores, pstar = .6, min_unique = 50, n_cores_conditional = n_cores)
+save(adapted, file = paste0("samples/factor_", n_factors, "F_", n_subjects, "S_", n_pars, "P_FactRecovery.RData"))
+
+sampled <- run_stage(adapted, stage = "sample",iter = 500, particles = 150, n_cores = n_cores, pstar = .6, n_cores_conditional = n_cores)
+save(sampled, file = paste0("factor_", n_factors, "F_", n_subjects, "S_", n_pars, "P_FactRecovery.RData"))
 
 

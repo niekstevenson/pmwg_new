@@ -1,7 +1,7 @@
 source("pmwg/sampling.R")
 source("pmwg/variants/standard.R")
 
-add_info_diag <- function(sampler, prior){
+add_info_diag <- function(sampler, prior = NULL, ...){
   # Checking and default priors
   if (is.null(prior)) {
     prior <- list(theta_mu_mean = rep(0, sampler$n_pars), theta_mu_var = rep(1, sampler$n_pars))
@@ -24,7 +24,8 @@ get_startpoints_diag <- function(pmwgs, start_mu, start_var){
   return(list(tmu = start_mu, tvar = start_var, tvinv = MASS::ginv(start_var), a_half = start_a_half))
 }
 
-get_conditionals_diag <- function(s, samples, n_pars, iteration){
+get_conditionals_diag <- function(s, samples, n_pars){
+  iteration <- samples$iteration
   pts2_unwound <- apply(samples$theta_var,3,diag)
   all_samples <- rbind(samples$alpha[, s,],samples$theta_mu,pts2_unwound)
   mu_tilde <- apply(all_samples, 1, mean)
@@ -36,7 +37,7 @@ get_conditionals_diag <- function(s, samples, n_pars, iteration){
 }
 
 
-gibbs_step_diag <- function(sampler){
+gibbs_step_diag <- function(sampler, alpha){
   # Gibbs step for diagonal only
   # Get single iter versions, tmu = theta_mu, tvar = theta_var
   last <- last_sample_standard(sampler$samples)
@@ -48,35 +49,36 @@ gibbs_step_diag <- function(sampler){
   
   #Mu
   var_mu = 1.0 / (sampler$n_subjects * last$tvinv + prior$theta_mu_invar)
-  mean_mu = var_mu * ((apply(last$alpha, 1, sum) * last$tvinv + prior$theta_mu_mean * prior$theta_mu_invar))
+  mean_mu = var_mu * ((apply(alpha, 1, sum) * last$tvinv + prior$theta_mu_mean * prior$theta_mu_invar))
   tmu <- rnorm(sampler$n_pars, mean_mu, sd = sqrt(var_mu))
   names(tmu) <- sampler$par_names
   
   if(!is.null(hyper$std_shape)){
     # InvGamma alternative (probably inferior) prior
     shape = hyper$std_shape + sampler$n_subjects / 2
-    rate = hyper$std_rate + rowSums( (last$alpha-tmu)^2 ) / 2
+    rate = hyper$std_rate + rowSums( (alpha-tmu)^2 ) / 2
     tvinv = rgamma(n=sampler$n_pars, shape=shape, rate=rate)
     tvar = 1/tvinv
     a_half <- NULL
   } else {
     tvinv = rgamma(n=sampler$n_pars, shape=hyper$v_half/2 + sampler$n_subjects/2, rate=hyper$v_half/last$a_half + 
-                     rowSums( (last$alpha-tmu)^2 ) / 2)
+                     rowSums( (alpha-tmu)^2 ) / 2)
     tvar = 1/tvinv
     #Contrary to standard pmwg I use shape, rate for IG()
     a_half <- 1 / rgamma(n = sampler$n_pars, shape = (hyper$v_half + sampler$n_pars) / 2,
                          rate = hyper$v_half * tvinv + 1/(hyper$A_half^2))
   }
-  return(list(tmu = tmu, tvar = diag(tvar), tvinv = diag(tvinv), a_half = a_half, alpha = last$alpha))
+  return(list(tmu = tmu, tvar = diag(tvar), tvinv = diag(tvinv), a_half = a_half, alpha = alpha))
 }
 
-add_info <- add_info_diag
-get_startpoints <- get_startpoints_diag
-gibbs_step <- gibbs_step_diag
-get_conditionals <- get_conditionals_diag
+variant_funs <- list(
+  sample_store = sample_store_standard,
+  add_info = add_info_diag,
+  get_startpoints = get_startpoints_diag,
+  fill_samples = fill_samples_standard,
+  gibbs_step = gibbs_step_diag,
+  get_group_level = get_group_level_standard,
+  get_conditionals = get_conditionals_diag,
+  filtered_samples = filtered_samples_standard
+)
 
-#Clean up a little bit
-rm(add_info_diag)
-rm(get_startpoints_diag)
-rm(gibbs_step_diag)
-rm(get_conditionals_diag)

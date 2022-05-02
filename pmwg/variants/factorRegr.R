@@ -1,7 +1,7 @@
 source("pmwg/sampling.R")
 source("pmwg/variants/factor.R")
 
-add_info_factorRegr <- function(sampler, prior, ...){
+add_info_factorRegr <- function(sampler, prior = NULL, ...){
   sampler <- add_info_factor(sampler, prior, ...)
   covariates <- list(...)$covariates
   # Add intercept
@@ -16,6 +16,19 @@ add_info_factorRegr <- function(sampler, prior, ...){
   sampler$n_covariates <- ncol(covariates)
   return(sampler)
 }
+
+sample_store_factorRegr <- function(data, par_names, iters = 1, stage = "init", integrate = T, ...) {
+  n_factors <- list(...)$n_factors
+  covariates <- list(...)$covariates
+  covariates <- cbind(rep(1, nrow(covariates)), covariates)
+  n_covariates <- ncol(covariates)
+  covariate_names <- colnames(covariates)
+  samples <- sample_store_factor(data, par_names, iters, stage, integrate, ...)
+  samples$theta_beta <- array(NA_real_, dim = c(n_covariates, n_factors, iters), dimnames = list(covariate_names, NULL, NULL))
+  samples$beta_untransf <- array(NA_real_, dim = c(n_covariates, n_factors, iters), dimnames = list(covariate_names, NULL, NULL))
+  return(samples)
+}
+
 
 get_startpoints_factorRegr<- function(pmwgs, start_mu, start_var){
   startpoints_fa <- get_startpoints_factor(pmwgs, start_mu, start_var)
@@ -34,7 +47,7 @@ fill_samples_factorRegr <- function(samples, group_level, proposals, epsilon, j 
   return(samples)
 }
 
-gibbs_step_factorRegr <- function(sampler){
+gibbs_step_factorRegr <- function(sampler, alpha){
   # Gibbs step for group means with parameter expanded factor analysis from Ghosh & Dunson 2009
   # mu = theta_mu, var = theta_var
   last <- last_sample_factorRegr(sampler$samples)
@@ -43,7 +56,7 @@ gibbs_step_factorRegr <- function(sampler){
   
   #extract previous values (for ease of reading)
   
-  alpha <- t(last$alpha)
+  alpha <- t(alpha)
   n_subjects <- sampler$n_subjects
   n_pars <- sampler$n_pars
   n_factors <- sampler$n_factors
@@ -111,7 +124,7 @@ gibbs_step_factorRegr <- function(sampler){
   beta_orig <- beta %*% matrix(diag(sqrt(1/diag(psi_inv)), n_factors), nrow = n_factors)
   return(list(tmu = mu + t(lambda%*%beta[1,]), tvar = var, lambda = lambda_orig, eta = eta, 
               lambda_untransf = lambda, beta_untransf = beta, sig_err_inv = sig_err_inv, 
-              psi_inv = psi_inv, beta = beta_orig, alpha = last$alpha))
+              psi_inv = psi_inv, beta = beta_orig, alpha = t(alpha)))
 }
 
 last_sample_factorRegr <- function(store) {
@@ -120,47 +133,19 @@ last_sample_factorRegr <- function(store) {
     eta = store$theta_eta[,,store$idx],
     lambda = store$lambda_untransf[,,store$idx],
     beta = store$beta_untransf[,,store$idx],
-    alpha = store$alpha[, , store$idx],
     psi_inv = store$theta_psi_inv[,,store$idx],
     sig_err_inv = store$theta_sig_err_inv[,,store$idx]
   )
 }
 
-sample_store_factorRegr <- function(par_names, subject_ids, iters = 1, stage = "init", ...) {
-  n_factors <- list(...)$n_factors
-  covariates <- list(...)$covariates
-  covariates <- cbind(rep(1, nrow(covariates)), covariates)
-  n_covariates <- ncol(covariates)
-  covariate_names <- colnames(covariates)
-  n_pars <- length(par_names)
-  n_subjects <- length(subject_ids)
-  list(
-    epsilon = array(NA_real_,dim = c(n_subjects, iters),dimnames = list(subject_ids, NULL)),
-    origin = array(NA_real_,dim = c(n_subjects, iters),dimnames = list(subject_ids, NULL)),
-    alpha = array(NA_real_,dim = c(n_pars, n_subjects, iters),dimnames = list(par_names, subject_ids, NULL)),
-    theta_mu = array(NA_real_,dim = c(n_pars, iters), dimnames = list(par_names, NULL)),
-    theta_var = array(NA_real_,dim = c(n_pars, n_pars, iters),dimnames = list(par_names, par_names, NULL)),
-    theta_lambda = array(NA_real_,dim = c(n_pars, n_factors, iters),dimnames = list(par_names, NULL, NULL)),
-    lambda_untransf = array(NA_real_,dim = c(n_pars, n_factors, iters),dimnames = list(par_names, NULL, NULL)),
-    theta_sig_err_inv = array(NA_real_,dim = c(n_pars, n_pars, iters),dimnames = list(par_names, par_names, NULL)),
-    theta_psi_inv = array(NA_real_, dim = c(n_factors, n_factors, iters), dimnames = list(NULL, NULL, NULL)),
-    theta_eta = array(NA_real_, dim = c(n_subjects, n_factors, iters), dimnames = list(NULL, NULL, NULL)),
-    theta_beta = array(NA_real_, dim = c(n_covariates, n_factors, iters), dimnames = list(covariate_names, NULL, NULL)),
-    beta_untransf = array(NA_real_, dim = c(n_covariates, n_factors, iters), dimnames = list(covariate_names, NULL, NULL)),
-    stage = array(stage, iters),
-    subj_ll = array(NA_real_,dim = c(n_subjects, iters),dimnames = list(subject_ids, NULL))
-  )
-}
+variant_funs <- list(
+  sample_store = sample_store_factorRegr,
+  add_info = add_info_factorRegr,
+  get_startpoints = get_startpoints_factorRegr,
+  fill_samples = fill_samples_factorRegr,
+  gibbs_step = gibbs_step_factorRegr,
+  get_group_level = get_group_level_standard,
+  get_conditionals = get_conditionals_standard,
+  filtered_samples = filtered_samples_standard
+)
 
-add_info <- add_info_factorRegr
-fill_samples <- fill_samples_factorRegr
-get_startpoints <- get_startpoints_factorRegr
-gibbs_step <- gibbs_step_factorRegr
-sample_store <- sample_store_factorRegr
-
-#Clean up a little bit
-rm(add_info_factorRegr)
-rm(fill_samples_factorRegr)
-rm(get_startpoints_factorRegr)
-rm(gibbs_step_factorRegr)
-rm(sample_store_factorRegr)

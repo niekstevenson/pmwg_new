@@ -21,7 +21,7 @@ log_likelihood=function(x,data, sample=F) {
 }
 
 n.trials = 70       #number trials per subject per conditions
-n.subj = 10          #number of subjects
+n.subj = 15          #number of subjects
 n.cond = 3          #number of conditions
 
 
@@ -75,8 +75,12 @@ sampler <- pmwgs(
   prior = priors,
   ll_func = log_likelihood
 )
-debug(base::chol)
-sampler <- init(sampler) # i don't use any start points here
-burned <- run_stage(sampler, stage = "burn",iter = 500, particles = 100, n_cores = 10, pstar = .7)
-adapted <- run_stage(burned, stage = "adapt", iter = 1000, particles = 100, n_cores = 10, pstar =.7)
-sampled <- run_stage(adapted, stage = "sample", iter = 1000, particles = 100, n_cores = 15, pstar = .6)
+
+n_cores = 10
+
+sampler <- init(sampler, n_cores = 1) # i don't use any start points here
+burned <- run_stage(sampler, stage = "burn",iter = 20, particles = 100, n_cores = n_cores, pstar = .7)
+burned <- run_stage(burned, stage = "burn",iter = 100, particles = 100, n_cores = n_cores, pstar = .7)
+save(burned, file = "standard.RData")
+adapted <- run_stage(burned, stage = "adapt", iter = 1000, particles = 100, n_cores = n_cores, pstar =.7, thin = 2, min_unique = 50, thin_eff_only = T)
+sampled <- run_stage(adapted, stage = "sample", iter = 1000, particles = 100, n_cores = n_cores, pstar = .6, thin = 2, thin_eff_only = T)

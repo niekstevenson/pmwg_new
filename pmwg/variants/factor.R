@@ -1,7 +1,7 @@
 source("pmwg/sampling.R")
 source("pmwg/variants/standard.R")
 
-add_info_factor <- function(sampler, prior, ...){
+add_info_factor <- function(sampler, prior = NULL, ...){
   # Checking and default priors
   args <- list(...)
   n_factors <- args$n_factors
@@ -38,6 +38,25 @@ add_info_factor <- function(sampler, prior, ...){
   return(sampler)
 }
 
+sample_store_factor <- function(data, par_names, iters = 1, stage = "init", integrate = T, ...) {
+  n_factors <- list(...)$n_factors
+  subject_ids <- unique(data$subject)
+  n_pars <- length(par_names)
+  n_subjects <- length(subject_ids)
+  base_samples <- sample_store_base(data, par_names, iters, stage)
+  samples <- list(
+    theta_mu = array(NA_real_,dim = c(n_pars, iters), dimnames = list(par_names, NULL)),
+    theta_var = array(NA_real_,dim = c(n_pars, n_pars, iters),dimnames = list(par_names, par_names, NULL)),
+    theta_lambda = array(NA_real_,dim = c(n_pars, n_factors, iters),dimnames = list(par_names, NULL, NULL)),
+    lambda_untransf = array(NA_real_,dim = c(n_pars, n_factors, iters),dimnames = list(par_names, NULL, NULL)),
+    theta_sig_err_inv = array(NA_real_,dim = c(n_pars, n_pars, iters),dimnames = list(par_names, par_names, NULL)),
+    theta_psi_inv = array(NA_real_, dim = c(n_factors, n_factors, iters), dimnames = list(NULL, NULL, NULL)),
+    theta_eta = array(NA_real_, dim = c(n_subjects, n_factors, iters), dimnames = list(subject_ids, NULL, NULL))
+  )
+  if(integrate) samples <- c(samples, base_samples)
+  return(samples)
+}
+
 get_startpoints_factor<- function(pmwgs, start_mu, start_var){
   if (is.null(start_mu)) start_mu <- rnorm(pmwgs$n_pars, sd = 1)
   # If no starting point for group var just sample some
@@ -62,7 +81,7 @@ fill_samples_factor <- function(samples, group_level, proposals, epsilon, j = 1,
   return(samples)
 }
 
-gibbs_step_factor <- function(sampler){
+gibbs_step_factor <- function(sampler, alpha){
   # Gibbs step for group means with parameter expanded factor analysis from Ghosh & Dunson 2009
   # mu = theta_mu, var = theta_var
   last <- last_sample_factor(sampler$samples)
@@ -71,7 +90,7 @@ gibbs_step_factor <- function(sampler){
   
   #extract previous values (for ease of reading)
   
-  alpha <- t(last$alpha)
+  alpha <- t(alpha)
   n_subjects <- sampler$n_subjects
   n_pars <- sampler$n_pars
   n_factors <- sampler$n_factors
@@ -87,7 +106,7 @@ gibbs_step_factor <- function(sampler){
   mu_sig <- solve(n_subjects * sig_err_inv + prior$theta_mu_invar)
   mu_mu <- mu_sig %*% (sig_err_inv %*% colSums(alpha - eta %*% t(lambda)) + prior$theta_mu_invar%*% prior$theta_mu_mean)
   mu <- rmvnorm(1, mu_mu, mu_sig)
-  names(mu) <- colnames(alpha)
+  colnames(mu) <- colnames(alpha)
   # calculate mean-centered observations
   alphatilde <- sweep(alpha, 2, mu)
   
@@ -125,7 +144,7 @@ gibbs_step_factor <- function(sampler){
   var <- lambda_orig %*% solve(psi_inv) %*% t(lambda_orig) + diag(1/diag((sig_err_inv)))
   lambda_orig <- lambda_orig %*% matrix(diag(sqrt(1/diag(psi_inv)), n_factors), nrow = n_factors)
   return(list(tmu = mu, tvar = var, lambda_untransf = lambda, lambda = lambda_orig, eta = eta, 
-              sig_err_inv = sig_err_inv, psi_inv = psi_inv, alpha = last$alpha))
+              sig_err_inv = sig_err_inv, psi_inv = psi_inv, alpha = t(alpha)))
 }
 
 last_sample_factor <- function(store) {
@@ -133,38 +152,19 @@ last_sample_factor <- function(store) {
     mu = store$theta_mu[, store$idx],
     eta = store$theta_eta[,,store$idx],
     lambda = store$lambda_untransf[,,store$idx],
-    alpha = store$alpha[, , store$idx],
     psi_inv = store$theta_psi_inv[,,store$idx],
     sig_err_inv = store$theta_sig_err_inv[,,store$idx]
   )
 }
 
-sample_store_factor <- function(par_names, subject_ids, iters = 1, stage = "init", ...) {
-  n_factors <- list(...)$n_factors
-  n_pars <- length(par_names)
-  n_subjects <- length(subject_ids)
-  list(
-    epsilon = array(NA_real_,dim = c(n_subjects, iters),dimnames = list(subject_ids, NULL)),
-    origin = array(NA_real_,dim = c(n_subjects, iters),dimnames = list(subject_ids, NULL)),
-    alpha = array(NA_real_,dim = c(n_pars, n_subjects, iters),dimnames = list(par_names, subject_ids, NULL)),
-    theta_mu = array(NA_real_,dim = c(n_pars, iters), dimnames = list(par_names, NULL)),
-    theta_var = array(NA_real_,dim = c(n_pars, n_pars, iters),dimnames = list(par_names, par_names, NULL)),
-    theta_lambda = array(NA_real_,dim = c(n_pars, n_factors, iters),dimnames = list(par_names, NULL, NULL)),
-    lambda_untransf = array(NA_real_,dim = c(n_pars, n_factors, iters),dimnames = list(par_names, NULL, NULL)),
-    theta_sig_err_inv = array(NA_real_,dim = c(n_pars, n_pars, iters),dimnames = list(par_names, par_names, NULL)),
-    theta_psi_inv = array(NA_real_, dim = c(n_factors, n_factors, iters), dimnames = list(NULL, NULL, NULL)),
-    stage = array(stage, iters),
-    theta_eta = array(NA_real_, dim = c(n_subjects, n_factors, iters), dimnames = list(NULL, NULL, NULL)),
-    subj_ll = array(NA_real_,dim = c(n_subjects, iters),dimnames = list(subject_ids, NULL))
-  )
-}
+variant_funs <- list(
+  sample_store = sample_store_factor,
+  add_info = add_info_factor,
+  get_startpoints = get_startpoints_factor,
+  fill_samples = fill_samples_factor,
+  gibbs_step = gibbs_step_factor,
+  get_group_level = get_group_level_standard,
+  get_conditionals = get_conditionals_standard,
+  filtered_samples = filtered_samples_standard
+)
 
-add_info <- add_info_factor
-fill_samples <- fill_samples_factor
-get_startpoints <- get_startpoints_factor
-gibbs_step <- gibbs_step_factor
-sample_store <- sample_store_factor
-
-#Clean up a little bit
-rm(gibbs_step_factor)
-rm(sample_store_factor)

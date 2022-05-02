@@ -33,10 +33,10 @@ log_likelihood=function(x,data, sample=TRUE) {
 }
 
 
-n.trials <- 70      #number trials per subject per conditions
-n.subj <- 10 #number of subjects
+n.trials <- 80      #number trials per subject per conditions
+n.subj <- 20 #number of subjects
 n.cond <- 3
-n.exp <- 2
+n.exp <- 1
 
 allparameters <- numeric()
 alldata <- list()
@@ -117,13 +117,17 @@ sampler <- pmwgs(
   data = df,
   pars = pars,
   ll_func = joint_ll,
-  par_groups = c(rep(1, 7), rep(2, 7))
+  par_groups = c(rep(1, 3), rep(2, 3), 3)
 )
 # start the sampler ---------------------------------------------------------
 sampler <- init(sampler, n_cores = 12) # i don't use any start points here
 
 # Sample! -------------------------------------------------------------------
-burned <- run_stage(sampler, stage = "burn",iter = 500, particles = 100, n_cores =10, pstar = .7)
+burned1 <- run_stage(sampler, stage = "burn",iter = 500, particles = 100, n_cores =6, pstar = .7)
+burned2 <- run_stage(sampler, stage = "burn",iter = 500, particles = 100, n_cores =6, pstar = .7)
+burned3 <- run_stage(sampler, stage = "burn",iter = 500, particles = 100, n_cores =6, pstar = .7)
+
+adapted1 <- run_stage(burned1, stage = "adapt", iter = 5000, particles = 100, n_cores = 6, pstar = .7)
 adapted <- run_stage(burned, stage = "adapt", iter = 5000, particles = 100, n_cores = 12, pstar = .7)
 sampled <- run_stage(adapted, stage = "sample", iter = 1000, particles = 100, n_cores = 12, pstar = .7)
 

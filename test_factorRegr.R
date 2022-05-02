@@ -37,7 +37,6 @@ for(j in 1:n_subjects){
 }
 
 # Create the Particle Metropolis within Gibbs sampler object ------------------
-source("variants/factorRegr.R")
 
 sampler <- pmwgs(
   data = all_data,

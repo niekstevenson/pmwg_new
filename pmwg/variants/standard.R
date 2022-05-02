@@ -1,6 +1,22 @@
+# Contains many of the functions required to fit standard pmwg, used in many other variants as well.
+
 source("pmwg/sampling.R")
 
-add_info_standard <- function(sampler, prior){
+sample_store_standard <- function(data, par_names, iters = 1, stage = "init", integrate = T, ...) {
+  subject_ids <- unique(data$subject)
+  n_pars <- length(par_names)
+  n_subjects <- length(subject_ids)
+  base_samples <- sample_store_base(data, par_names, iters, stage)
+  samples <- list(
+    theta_mu = array(NA_real_,dim = c(n_pars, iters), dimnames = list(par_names, NULL)),
+    theta_var = array(NA_real_,dim = c(n_pars, n_pars, iters),dimnames = list(par_names, par_names, NULL)),
+    a_half = array(NA_real_,dim = c(n_pars, iters),dimnames = list(par_names, NULL))
+  )
+  if(integrate) samples <- c(samples, base_samples)
+  return(samples)
+}
+
+add_info_standard <- function(sampler, prior = NULL, ...){
   # Checking and default priors
   if (is.null(prior)) {
     prior <- list(theta_mu_mean = rep(0, sampler$n_pars), theta_mu_var = diag(rep(1, sampler$n_pars)))
@@ -8,19 +24,11 @@ add_info_standard <- function(sampler, prior){
   # Things I save rather than re-compute inside the loops.
   prior$theta_mu_invar <- ginv(prior$theta_mu_var) #Inverse of the matrix
 
-  
   #Hyper parameters
   attr(sampler, "v_half") <- 2
   attr(sampler, "A_half") <- 1
   sampler$prior <- prior
   return(sampler)
-}
-
-fill_samples_standard <- function(samples, group_level, proposals, epsilon, j = 1, n_pars){
-  samples$a_half[, j] <- group_level$a_half
-  samples$last_theta_var_inv <- group_level$tvinv
-  samples <- fill_samples_base(samples, group_level, proposals, epsilon, j = j, n_pars)
-  return(samples)
 }
 
 get_startpoints_standard <- function(pmwgs, start_mu, start_var){
@@ -31,7 +39,23 @@ get_startpoints_standard <- function(pmwgs, start_mu, start_var){
   return(list(tmu = start_mu, tvar = start_var, tvinv = MASS::ginv(start_var), a_half = start_a_half))
 }
 
-gibbs_step_standard <- function(sampler){
+get_group_level_standard <- function(parameters, s){
+  # This function is modified for other versions
+  mu <- parameters$tmu
+  var <- parameters$tvar
+  return(list(mu = mu, var = var))
+}
+
+fill_samples_standard <- function(samples, group_level, proposals, epsilon, j = 1, n_pars){
+  samples$a_half[, j] <- group_level$a_half
+  samples$last_theta_var_inv <- group_level$tvinv
+  samples <- fill_samples_base(samples, group_level, proposals, epsilon, j = j, n_pars)
+  return(samples)
+}
+
+
+
+gibbs_step_standard <- function(sampler, alpha){
   # Gibbs step for group means, with full covariance matrix estimation
   # tmu = theta_mu, tvar = theta_var
   last <- last_sample_standard(sampler$samples)
@@ -40,7 +64,7 @@ gibbs_step_standard <- function(sampler){
   
   # Here mu is group mean, so we are getting mean and variance
   var_mu <- ginv(sampler$n_subjects * last$tvinv + prior$theta_mu_invar)
-  mean_mu <- as.vector(var_mu %*% (last$tvinv %*% apply(last$alpha, 1, sum) +
+  mean_mu <- as.vector(var_mu %*% (last$tvinv %*% apply(alpha, 1, sum) +
                                      prior$theta_mu_invar %*% prior$theta_mu_mean))
   chol_var_mu <- t(chol(var_mu)) # t() because I want lower triangle.
   # New sample for mu.
@@ -48,7 +72,7 @@ gibbs_step_standard <- function(sampler){
   names(tmu) <- sampler$par_names
   
   # New values for group var
-  theta_temp <- last$alpha - tmu
+  theta_temp <- alpha - tmu
   cov_temp <- (theta_temp) %*% (t(theta_temp))
   if(!is.null(hyper$std_df)){
     B_half <- hyper$std_scale * diag(1, nrow = sampler$n_pars) + cov_temp # nolint
@@ -65,10 +89,11 @@ gibbs_step_standard <- function(sampler){
     a_half <- 1 / rgamma(n = sampler$n_pars,shape = (hyper$v_half + sampler$n_pars) / 2,
                          rate = hyper$v_half * diag(tvinv) + 1/(hyper$A_half^2))
   }
-  return(list(tmu = tmu,tvar = tvar,tvinv = tvinv,a_half = a_half,alpha = last$alpha))
+  return(list(tmu = tmu,tvar = tvar,tvinv = tvinv,a_half = a_half,alpha = alpha))
 }
 
-get_conditionals_standard <- function(s, samples, n_pars, iteration){
+get_conditionals_standard <- function(s, samples, n_pars){
+  iteration <- samples$iteration
   pts2_unwound <- apply(samples$theta_var,3,unwind)
   all_samples <- rbind(samples$alpha[, s,],samples$theta_mu,pts2_unwound)
   mu_tilde <- apply(all_samples, 1, mean)
@@ -89,39 +114,27 @@ last_sample_standard <- function(store) {
   list(
     tmu = store$theta_mu[, store$idx],
     tvar = store$theta_var[, , store$idx],
-    alpha = store$alpha[, , store$idx],
     tvinv = store$last_theta_var_inv,
     a_half = store$a_half[, store$idx]
   )
 }
 
-sample_store_standard <- function(par_names, subject_ids, iters = 1, stage = "init", ...) {
-  n_pars <- length(par_names)
-  n_subjects <- length(subject_ids)
-  list(
-    epsilon = array(NA_real_,dim = c(n_subjects, iters),dimnames = list(subject_ids, NULL)),
-    origin = array(NA_real_,dim = c(n_subjects, iters),dimnames = list(subject_ids, NULL)),
-    alpha = array(NA_real_,dim = c(n_pars, n_subjects, iters),dimnames = list(par_names, subject_ids, NULL)),
-    theta_mu = array(NA_real_,dim = c(n_pars, iters), dimnames = list(par_names, NULL)),
-    theta_var = array(NA_real_,dim = c(n_pars, n_pars, iters),dimnames = list(par_names, par_names, NULL)),
-    stage = array(stage, iters),
-    subj_ll = array(NA_real_,dim = c(n_subjects, iters),dimnames = list(subject_ids, NULL)),
-    a_half = array(NA_real_,dim = c(n_pars, iters),dimnames = list(par_names, NULL))
+filtered_samples_standard <- function(sampler, filter){
+  out <- list(
+    theta_mu = sampler$samples$theta_mu[, filter],
+    theta_var = sampler$samples$theta_var[, , filter],
+    alpha = sampler$samples$alpha[, , filter],
+    iteration = length(filter)
   )
 }
 
-
-add_info <- add_info_standard
-fill_samples <- fill_samples_standard
-get_startpoints <- get_startpoints_standard
-gibbs_step <- gibbs_step_standard
-get_conditionals <- get_conditionals_standard
-sample_store <- sample_store_standard
-
-#Clean up a little bit
-rm(add_info_standard)
-rm(fill_samples_standard)
-rm(get_startpoints_standard)
-rm(gibbs_step_standard)
-rm(get_conditionals_standard)
-rm(sample_store_standard)
+variant_funs <- list(
+  sample_store = sample_store_standard,
+  add_info = add_info_standard,
+  get_startpoints = get_startpoints_standard,
+  fill_samples = fill_samples_standard,
+  gibbs_step = gibbs_step_standard,
+  get_group_level = get_group_level_standard,
+  get_conditionals = get_conditionals_standard,
+  filtered_samples = filtered_samples_standard
+)
