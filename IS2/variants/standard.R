@@ -1,6 +1,6 @@
 source("IS2/IS2.R")
 
-get_all_pars_standard <- function(samples, filter){
+get_all_pars_standard <- function(samples, filter, info){
   n_subjects <- samples$n_subjects
   n_iter = length(samples$samples$stage[samples$samples$stage== filter])
   # Exctract relevant objects
@@ -10,10 +10,10 @@ get_all_pars_standard <- function(samples, filter){
   a_half <- log(samples$samples$a_half[,samples$samples$stage==filter])
   theta_var.unwound = apply(theta_var,3,unwind)
   # Set up
-  n.params<- samples$n_pars+nrow(theta_var.unwound)+samples$n_pars
-  all_samples=array(dim=c(n_subjects,n.params,n_iter))
-  mu_tilde=array(dim = c(n_subjects,n.params))
-  var_tilde=array(dim = c(n_subjects,n.params,n.params))
+  n_params<- samples$n_pars+nrow(theta_var.unwound)+samples$n_pars
+  all_samples=array(dim=c(n_subjects,n_params,n_iter))
+  mu_tilde=array(dim = c(n_subjects,n_params))
+  var_tilde=array(dim = c(n_subjects,n_params,n_params))
   
   for (j in 1:n_subjects){
     all_samples[j,,] = rbind(alpha[,j,],theta_mu[,],theta_var.unwound[,])
@@ -28,9 +28,9 @@ get_all_pars_standard <- function(samples, filter){
       var_tilde[i,,]<-corpcor::make.positive.definite(var_tilde[i,,], tol=1e-6)
     }
   }
-  
   X <- cbind(t(theta_mu),t(theta_var.unwound),t(a_half))
-  return(list(X = X, mu_tilde = mu_tilde, var_tilde = var_tilde))
+  info$n_params <- n_params
+  return(list(X = X, mu_tilde = mu_tilde, var_tilde = var_tilde, info = info))
 }
 
 robust_diwish = function (W, v, S) { #RJI_change: this function is to protect against weird proposals in the diwish function, where sometimes matrices weren't pos def
@@ -75,7 +75,8 @@ unwind=function(x,reverse=FALSE) {
 }
 
 
-group_dist_standard = function(random_effect = NULL, parameters, sample = FALSE, n_samples = NULL, n_randeffect){
+group_dist_standard = function(random_effect = NULL, parameters, sample = FALSE, n_samples = NULL, info){
+  n_randeffect <- info$n_randeffect
   param.theta.mu <- parameters[1:n_randeffect]
   param.theta.sig.unwound <- parameters[(n_randeffect+1):(length(parameters)-n_randeffect)] 
   param.theta.sig2 <- unwind(param.theta.sig.unwound, reverse = TRUE)
@@ -87,10 +88,10 @@ group_dist_standard = function(random_effect = NULL, parameters, sample = FALSE,
   }
 }
 
-prior_dist_standard = function(parameters, samples){
-  n_randeffect <- samples$n_pars
-  prior <- samples$prior
-  hyper <- attributes(samples)
+prior_dist_standard = function(parameters, info){
+  n_randeffect <- info$n_randeffect
+  prior <- info$prior
+  hyper <- info$hyper
   param.theta.mu <- parameters[1:n_randeffect]
   param.theta.sig.unwound <- parameters[(n_randeffect+1):(length(parameters)-n_randeffect)]
   param.theta.sig2 <- unwind(param.theta.sig.unwound, reverse = TRUE)

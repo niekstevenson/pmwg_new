@@ -1,9 +1,8 @@
 #Script for recovering a typical experiment 
 
 rm(list = ls())
-source("pmwg/variants/factor.R")
-
 library(rtdists)
+source("pmwg/variants/diag_groups.R")
 
 log_likelihood=function(x,data, sample=F) {
   x <- exp(x)
@@ -21,7 +20,7 @@ log_likelihood=function(x,data, sample=F) {
 }
 
 n.trials = 70       #number trials per subject per conditions
-n.subj = 20          #number of subjects
+n.subj = 40          #number of subjects
 n.cond = 3          #number of conditions
 
 
@@ -34,11 +33,14 @@ data$subject = rep(1:n.subj, each = n.trials*n.cond) #filling in subjects
 parameter.names=c("b1","b2","b3", "A","v1","v2","t0")
 n.parameters=length(parameter.names)
 
-ptm <- array(dim = n.parameters, dimnames = list(parameter.names)) #an empty array where i will put parameter values
+ptm1 <- array(dim = n.parameters, dimnames = list(parameter.names)) #an empty array where i will put parameter values
+ptm2 <- array(dim = n.parameters, dimnames = list(parameter.names)) #an empty array where i will put parameter values
 
-ptm[1:n.parameters]=c(0.1,0.3,0.5,0.4,1.2,0.3,-2.4)
-exp(ptm)
-vars = abs(ptm)/10 #off diagonal correlations are done as absolute/10
+ptm1[1:n.parameters]=c(0.1,0.3,0.5,0.4,1.2,0.3,-2.4)
+ptm2[1:n.parameters]=c(0.1,0.3,0.5,0.4,1.5,0.5,-1.8)
+exp(ptm1)
+exp(ptm2)
+vars = abs(ptm1)/10 #off diagonal correlations are done as absolute/10
 
 sigmaC <- matrix(c(.8, .5, .4, .15, .15, .3, -.15,
                    .5, .8, .4, .2, .3, .3, .3,
@@ -53,8 +55,9 @@ sigmaC <- matrix(c(.8, .5, .4, .15, .15, .3, -.15,
 diag(sigmaC)=sqrt(vars)
 sigmaC <- sdcor2cov(sigmaC)
 
-subj_random_effects <- t(mvtnorm::rmvnorm(n.subj,mean=ptm,sigma=sigmaC))
-
+subj_random_effects_1 <- t(mvtnorm::rmvnorm(n.subj/2,mean=ptm1,sigma=sigmaC))
+subj_random_effects_2 <- t(mvtnorm::rmvnorm(n.subj/2,mean=ptm2,sigma=sigmaC))
+subj_random_effects <- cbind(subj_random_effects_1, subj_random_effects_2)
 
 for (i in 1:n.subj){
   tmp<- log_likelihood(subj_random_effects[,i],sample=TRUE,data=data[data$subject==i,])
@@ -69,18 +72,32 @@ priors <- list(
   theta_mu_var = diag(rep(1, length(pars)))
 )
 
+
+source("pmwg/variants/diag_groups.R")
+data$group <- rep(c(1,2), each = nrow(data)/2)
+pars <- rownames(subj_random_effects)
+
+par_idx <- matrix(0, nrow = length(pars), ncol = 2)
+par_idx[0:4,] <- "1,2" 
+par_idx[5:length(pars),2] <- "1"
+par_idx[5:length(pars),1] <- "2"
+
+# Create the Particle Metropolis within Gibbs sampler object ------------------
 sampler <- pmwgs(
   data = data,
   pars = pars,
   ll_func = log_likelihood,
-  n_factors = 2
+  par_idx = par_idx
 )
-
-n_cores = 10
-
+# start the sampler ---------------------------------------------------------
+n_cores <- 8
 sampler <- init(sampler, n_cores = n_cores) # i don't use any start points here
-burned <- run_stage(sampler, stage = "burn",iter = 500, particles = 100, n_cores = n_cores, pstar = .7)
-adapted <- run_stage(burned, stage = "adapt", iter = 1000, particles = 100, n_cores = n_cores, pstar =.7)
-debug(variant_funs$get_conditionals)
+
+# Sample! -------------------------------------------------------------------
+burned <- run_stage(sampler, stage = "burn",iter = 500, particles = 100, n_cores = n_cores, pstar = .6)
+save(burned, file = "diag_groups.RData")
+adapted <- run_stage(burned, stage = "adapt", iter = 500, particles = 100, n_cores = n_cores, pstar = .6)
+save(adapted, file = "diag_groups.RData")
 sampled <- run_stage(adapted, stage = "sample", iter = 500, particles = 100, n_cores = n_cores, pstar = .6)
-save(sampled, file = "standard.RData")
+save(sampled, file = "diag_groups.RData")
+

@@ -13,36 +13,22 @@ library(corpcor) #RJI_change: not sure if this was included before
 
 IS2 <- function(samples, filter, IS_samples = 1000, n_particles = 250, n_cores = 1, df = 3){
   ###### set up variables #####
-  all_pars <- variant_funs$get_all_pars(samples, filter)
+  info <- add_info_base(samples)
+  all_pars <- variant_funs$get_all_pars(samples, filter, info)
   muX<-apply(all_pars$X,2,mean)
-  varX<-var(all_pars$X)
-  
-  # No longer a mix?
+  varX<-cov(all_pars$X)
+
   prop_theta=mvtnorm::rmvt(IS_samples,sigma = varX, df=df, delta=muX)
 
   #do the sampling
-  if (n_cores>1){
-    logw_num <- mclapply(X=1:IS_samples, 
-                    FUN = compute_lw_num, 
-                    prop_theta = prop_theta,
-                    data = samples$data,
-                    n_subjects= samples$n_subjects,
-                    n_particles = n_particles,
-                    mu_tilde=all_pars$mu_tilde,
-                    var_tilde = all_pars$var_tilde, 
-                    samples=samples, 
-                    mc.cores = n_cores)
-  } else{
-    logw_num <- lapply(X=1:IS_samples, 
-                    FUN = compute_lw_num, 
-                    prop_theta = prop_theta,
-                    data = samples$data,
-                    n_subjects= samples$n_subjects,
-                    n_particles = n_particles,
-                    mu_tilde=all_pars$mu_tilde,
-                    var_tilde = all_pars$var_tilde, 
-                    samples=samples)
-  }
+  logw_num <- mclapply(X=1:IS_samples, 
+                  FUN = compute_lw_num, 
+                  prop_theta = prop_theta,
+                  n_particles = n_particles,
+                  mu_tilde=all_pars$mu_tilde,
+                  var_tilde = all_pars$var_tilde, 
+                  info = all_pars$info,
+                  mc.cores = n_cores)
   logw_den <- mvtnorm::dmvt(prop_theta, delta=muX, sigma=varX,df=df, log = TRUE)
   
   finished <- unlist(logw_num) - logw_den
@@ -52,10 +38,16 @@ IS2 <- function(samples, filter, IS_samples = 1000, n_particles = 250, n_cores =
   lw
 }
 
-get_logp=function(prop_theta,data,n_subjects,n_particles,n_randeffect,mu_tilde,sigma_tilde, par_names, ll_func){
+get_logp=function(prop_theta,n_particles,mu_tilde,var_tilde, info){
+  # Unload for legibility
+  n_subjects <- info$n_subjects
+  n_randeffect <- info$n_randeffect
+  n_params <- info$n_params
+  ll_func <- info$ll_func
+  data <- info$data
   # make an array for the density
-  n.params <- length(prop_theta)
-  logp=array(dim=c(n_particles,n_subjects))
+  logp <- array(dim=c(n_particles,n_subjects))
+
   # for each subject, get 1000 IS samples (particles) and find log weight of each
   for (j in 1:n_subjects){
     # generate the particles from the conditional MVnorm AND mix of group level proposals
@@ -65,23 +57,23 @@ get_logp=function(prop_theta,data,n_subjects,n_particles,n_randeffect,mu_tilde,s
     if (n1>(n_particles-2)) n1=n_particles-2 ## These just avoid degenerate arrays.
     n2=n_particles-n1
     # do conditional MVnorm based on the proposal distribution
-    conditional = condMVNorm::condMVN(mean=mu_tilde[j,],sigma=sigma_tilde[j,,],
+    conditional = condMVNorm::condMVN(mean=mu_tilde[j,],sigma=var_tilde[j,,],
                                       dependent.ind=c(1:n_randeffect),
-                                      given.ind=c((n_randeffect+1):n.params),
-                                      X.given=prop_theta[c(1:(n.params-n_randeffect))],
+                                      given.ind=c((n_randeffect+1):n_params),
+                                      X.given=prop_theta[c(1:(n_params-n_randeffect))],
                                       check.sigma = F)
     # Subject specific efficient distribution
     particles1 <- mvtnorm::rmvnorm(n1, conditional$condMean,conditional$condVar)
     # Group level
     particles2 <- variant_funs$group_dist(n_samples=n2, parameters = prop_theta,
-                             sample=TRUE, n_randeffect=n_randeffect)
+                             sample=TRUE, info = info)
     particles <- rbind(particles1,particles2)
     # names for ll function to work
-    colnames(particles) <- par_names
+    colnames(particles) <- info$par_names
     # do lba log likelihood with given parameters for each subject, gets density of particle from ll func
     lw_first <- apply(particles, 1, ll_func, data = data[data$subject==unique(data$subject)[j],])
     # below gets second part of equation 5 numerator ie density under prop_theta
-    lw_second <- apply(particles, 1, variant_funs$group_dist, prop_theta, FALSE, NULL, n_randeffect)
+    lw_second <- apply(particles, 1, variant_funs$group_dist, prop_theta, FALSE, NULL, info)
     # below is the denominator - ie mix of density under conditional and density under pro_theta
     lw_third <- log(wmix*dmvnorm(particles, conditional$condMean, conditional$condVar) + (1-wmix) * exp(lw_second)) 
     # does equation 5
@@ -104,11 +96,21 @@ get_logp=function(prop_theta,data,n_subjects,n_particles,n_randeffect,mu_tilde,s
   }
 }
 
-compute_lw_num=function(i, prop_theta,data,n_subjects,n_particles,
-                    mu_tilde,var_tilde, samples){
-  logp.out <- get_logp(prop_theta[i,], data, n_subjects, n_particles, samples$n_pars,
-                       mu_tilde, var_tilde, samples$par_names, samples$ll_func)
-  logw_num <- logp.out[1]+variant_funs$prior_dist(parameters = prop_theta[i,], samples)
+compute_lw_num=function(i, prop_theta,n_particles,mu_tilde,var_tilde,info){
+  logp.out <- get_logp(prop_theta[i,], n_particles, mu_tilde, var_tilde, info)
+  logw_num <- logp.out+variant_funs$prior_dist(parameters = prop_theta[i,], info)
   return(logw_num)
+}
+
+add_info_base <- function(samples){
+  info <- list(
+    n_randeffect = samples$n_pars,
+    n_subjects = samples$n_subjects,
+    data = samples$data,
+    ll_func = samples$ll_func,
+    prior = samples$prior,
+    hyper = attributes(samples)
+  )
+  return(info)
 }
 

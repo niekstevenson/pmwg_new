@@ -7,7 +7,7 @@ add_info_diag <- function(sampler, prior = NULL, ...){
     prior <- list(theta_mu_mean = rep(0, sampler$n_pars), theta_mu_var = rep(1, sampler$n_pars))
   }
   # Things I save rather than re-compute inside the loops.
-  prior$theta_mu_invar <- diag(1/diag(prior$theta_mu_var)) #Inverse of the prior
+  prior$theta_mu_invar <- 1/prior$theta_mu_var #Inverse of the prior
   
   #Hyper parameters
   attr(sampler, "v_half") <- 2
@@ -26,13 +26,13 @@ get_startpoints_diag <- function(pmwgs, start_mu, start_var){
 
 get_conditionals_diag <- function(s, samples, n_pars){
   iteration <- samples$iteration
-  pts2_unwound <- apply(samples$theta_var,3,diag)
+  pts2_unwound <- log(apply(samples$theta_var,3,diag))
   all_samples <- rbind(samples$alpha[, s,],samples$theta_mu,pts2_unwound)
   mu_tilde <- apply(all_samples, 1, mean)
   var_tilde <- var(t(all_samples))
   condmvn <- condMVN(mean = mu_tilde, sigma = var_tilde,
                      dependent.ind = 1:n_pars, given.ind = (n_pars + 1):length(mu_tilde),
-                     X.given = c(samples$theta_mu[,iteration], diag(samples$theta_var[,,iteration])))
+                     X.given = c(samples$theta_mu[,iteration], log(diag(samples$theta_var[,,iteration]))))
   return(list(eff_mu = condmvn$condMean, eff_var = condmvn$condVar))
 }
 
@@ -43,8 +43,6 @@ gibbs_step_diag <- function(sampler, alpha){
   last <- last_sample_standard(sampler$samples)
   hyper <- attributes(sampler)
   prior <- sampler$prior
-  
-  prior$theta_mu_invar <- diag(prior$theta_mu_invar)
   last$tvinv <- diag(last$tvinv)
   
   #Mu

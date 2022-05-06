@@ -1,7 +1,7 @@
 rm(list = ls())
 
 source("IS2/variants/standard.R")
-load("standard.RData")
+load("samples/standard.RData")
 
 log_likelihood=function(x,data, sample=F) {
   x <- exp(x)
@@ -17,5 +17,4 @@ log_likelihood=function(x,data, sample=F) {
   }
   out
 }
-debug(condMVN)
 IS2(burned, filter = "burn", n_particles = 20, IS_samples = 10)
