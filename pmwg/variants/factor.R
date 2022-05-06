@@ -161,13 +161,9 @@ get_conditionals_factor <- function(s, samples, n_pars){
   iteration <- samples$iteration
   sig_err <- log(apply(samples$theta_sig_err_inv,3,diag))
   psi <- log(apply(samples$theta_psi_inv,3,diag))
-  eta <- samples$theta_eta[s,,]
+  eta <- matrix(samples$theta_eta[s,,], nrow = samples$n_factors)
   lambda <- apply(samples$lambda_untransf, 3, unwind_lambda, samples$constraintMat, samples$n_factors)
-  # pts2_unwound <- apply(samples$theta_var,3,unwind)
   theta_mu <- samples$theta_mu 
-  # for(i in 1:dim(samples$theta_mu)[2]){
-  #   theta_mu[,i] <- theta_mu[,i] + samples$lambda_untransf[,,i] %*% eta[,i] 
-  # }
   all_samples <- rbind(samples$alpha[, s,],theta_mu, eta, sig_err, psi, lambda)#, sig_err, psi, lambda)
   mu_tilde <- rowMeans(all_samples)
   var_tilde <- cov(t(all_samples))
@@ -176,7 +172,7 @@ get_conditionals_factor <- function(s, samples, n_pars){
                      X.given = c(theta_mu[,iteration],
                                  samples$theta_eta[s,,iteration],
                                  log(diag(samples$theta_sig_err_inv[,, iteration])),
-                                 log(diag(samples$theta_psi_inv[,, iteration])),
+                                 log(diag(samples$theta_psi_inv[,, iteration], samples$n_factors)),
                                  unwind_lambda(samples$lambda_untransf[,, iteration], samples$constraintMat, samples$n_factors)))
   return(list(eff_mu = condmvn$condMean, eff_var = condmvn$condVar))
 }
@@ -198,10 +194,10 @@ LambdaEta <- function(lambda, eta){
 filtered_samples_factor <- function(sampler, filter){
   out <- list(
     theta_mu = sampler$samples$theta_mu[, filter],
-    lambda_untransf = sampler$samples$lambda_untransf[, , filter],
-    theta_psi_inv = sampler$samples$theta_psi_inv[, , filter],
+    lambda_untransf = sampler$samples$lambda_untransf[, , filter, drop = F],
+    theta_psi_inv = sampler$samples$theta_psi_inv[, , filter, drop = F],
     theta_sig_err_inv = sampler$samples$theta_sig_err_inv[, , filter],
-    theta_eta = sampler$samples$theta_eta[, , filter],
+    theta_eta = sampler$samples$theta_eta[, , filter, drop = F],
     theta_var = sampler$samples$theta_var[,,filter],
     alpha = sampler$samples$alpha[, , filter],
     constraintMat = attributes(sampler)$constraintMat,
