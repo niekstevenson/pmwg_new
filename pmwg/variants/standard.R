@@ -1,5 +1,5 @@
 # Contains many of the functions required to fit standard pmwg, used in many other variants as well.
-
+library(Matrix)
 source("pmwg/sampling.R")
 
 sample_store_standard <- function(data, par_names, iters = 1, stage = "init", integrate = T, ...) {
@@ -66,8 +66,13 @@ gibbs_step_standard <- function(sampler, alpha){
   var_mu <- ginv(sampler$n_subjects * last$tvinv + prior$theta_mu_invar)
   mean_mu <- as.vector(var_mu %*% (last$tvinv %*% apply(alpha, 1, sum) +
                                      prior$theta_mu_invar %*% prior$theta_mu_mean))
-  chol_var_mu <- t(chol(var_mu)) # t() because I want lower triangle.
-  # New sample for mu.
+  attempt <- tryCatch({
+    chol_var_mu <- t(chol(var_mu)) # t() because I want lower triangle.
+  },error=function(e) e, warning=function(w) w)
+  if (any(class(attempt) %in% c("warning", "error", "try-error"))) {
+    save(var_mu, file = "non-sym-var.RData")
+    chol_var_mu <- t(chol(nearPD(var_mu)$mat)) # t() because I want lower triangle.
+  }  # New sample for mu.
   tmu <- rmvnorm(1, mean_mu, chol_var_mu %*% t(chol_var_mu))[1, ]
   names(tmu) <- sampler$par_names
   
