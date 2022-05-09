@@ -133,6 +133,37 @@ get_group_level_factor_groups <- function(parameters, s){
   return(list(mu = mu, var = var))
 }
 
+get_conditionals_factor <- function(s, samples, n_pars){
+  groups <- samples$groups
+  iteration <- samples$iteration
+  sig_err <- log(apply(samples$theta_sig_err_inv,3,diag))
+  psi <- log(apply(samples$theta_psi_inv,3,diag))
+  eta <- matrix(samples$theta_eta[s,,], nrow = samples$n_factors)
+  lambda <- apply(samples$lambda_untransf, 3, unwind_lambda, samples$constraintMat, samples$n_factors)
+  theta_mu <- samples$theta_mu[,groups[s],] 
+  all_samples <- rbind(samples$alpha[, s,],theta_mu, eta, sig_err, psi, lambda)#, sig_err, psi, lambda)
+  mu_tilde <- rowMeans(all_samples)
+  var_tilde <- cov(t(all_samples))
+  condmvn <- condMVN(mean = mu_tilde, sigma = var_tilde,
+                     dependent.ind = 1:n_pars, given.ind = (n_pars + 1):length(mu_tilde),
+                     X.given = c(theta_mu[,iteration],
+                                 samples$theta_mu[,groups[s],iteration],
+                                 log(diag(samples$theta_sig_err_inv[,, iteration])),
+                                 log(apply(samples$theta_psi_inv[,,iteration, drop = F], 3, diag)),
+                                 unwind_lambda(samples$lambda_untransf[,, iteration], samples$constraintMat, samples$n_factors)))
+  return(list(eff_mu = condmvn$condMean, eff_var = condmvn$condVar))
+}
+
+unwind_lambda <- function(lambda, constraintMat, n_factors, reverse = F){
+  if(reverse){
+    out <- matrix(0, n_randeffect, n_factors)
+    out[constraintMat] <- lambda
+  } else{
+    out <- as.numeric(lambda[constraintMat])
+  }
+  return(out)
+}
+
 get_conditionals_factor_groups <- function(s, samples, n_pars){
   groups <- samples$groups
   iteration <- samples$iteration
@@ -146,11 +177,17 @@ get_conditionals_factor_groups <- function(s, samples, n_pars){
   return(list(eff_mu = condmvn$condMean, eff_var = condmvn$condVar))
 }
 
-filtered_samples_factor_groups <- function(sampler, filter){
+filtered_samples_factor <- function(sampler, filter){
   out <- list(
-    theta_mu = sampler$samples$theta_mu[,,filter],
-    theta_var = sampler$samples$theta_var[, , filter],
+    theta_mu = sampler$samples$theta_mu[, filter],
+    lambda_untransf = sampler$samples$lambda_untransf[, , filter, drop = F],
+    theta_psi_inv = sampler$samples$theta_psi_inv[, , filter, drop = F],
+    theta_sig_err_inv = sampler$samples$theta_sig_err_inv[, , filter],
+    theta_eta = sampler$samples$theta_eta[, , filter, drop = F],
+    theta_var = sampler$samples$theta_var[,,filter],
     alpha = sampler$samples$alpha[, , filter],
+    constraintMat = attributes(sampler)$constraintMat,
+    n_factors = sampler$n_factors,
     iteration = length(filter),
     group = sampler$group_idx
   )

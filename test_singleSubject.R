@@ -72,7 +72,7 @@ sampler <- pmwgs(
 sampler <- init(sampler, n_cores = 1) # i don't use any start points here
 # Sample! -------------------------------------------------------------------
 source("pmwg/variants/single.R")
-burned <- run_stage(sampler, stage = "burn",iter = 1000, particles = 100, n_cores = 1, pstar = .7, epsilon = 1, verbose = T)
-# burned <- run_stage(burned, stage = "burn",iter = 100, particles = 100, n_cores = 2, pstar = .7)
+burned <- run_stage(sampler, stage = "burn",iter = 100, particles = 100, n_cores = 1, pstar = .7, verbose = T)
+burned <- run_stage(burned, stage = "sample",iter = 500, particles = 100, n_cores = 2, pstar = .7)
 
 matplot(t(burned$samples$alpha[,1,]), type = "l")

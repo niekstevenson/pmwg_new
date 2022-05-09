@@ -172,7 +172,7 @@ get_conditionals_factor <- function(s, samples, n_pars){
                      X.given = c(theta_mu[,iteration],
                                  samples$theta_eta[s,,iteration],
                                  log(diag(samples$theta_sig_err_inv[,, iteration])),
-                                 log(diag(samples$theta_psi_inv[,, iteration], samples$n_factors)),
+                                 log(apply(samples$theta_psi_inv[,,iteration, drop = F], 3, diag)),
                                  unwind_lambda(samples$lambda_untransf[,, iteration], samples$constraintMat, samples$n_factors)))
   return(list(eff_mu = condmvn$condMean, eff_var = condmvn$condVar))
 }
@@ -185,10 +185,6 @@ unwind_lambda <- function(lambda, constraintMat, n_factors, reverse = F){
     out <- as.numeric(lambda[constraintMat])
   }
   return(out)
-}
-
-LambdaEta <- function(lambda, eta){
-  lambda %*% eta
 }
 
 filtered_samples_factor <- function(sampler, filter){

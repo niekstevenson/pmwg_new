@@ -138,6 +138,55 @@ last_sample_factorRegr <- function(store) {
   )
 }
 
+get_conditionals_factorRegr <- function(s, samples, n_pars){
+  iteration <- samples$iteration
+  sig_err <- log(apply(samples$theta_sig_err_inv,3,diag))
+  psi <- log(apply(samples$theta_psi_inv,3,diag))
+  eta <- matrix(samples$theta_eta[s,,], nrow = samples$n_factors)
+  beta <-  apply(samples$beta_untransf, 3, as.numeric)
+  lambda <- apply(samples$lambda_untransf, 3, unwind_lambda, samples$constraintMat, samples$n_factors)
+  theta_mu <- samples$theta_mu 
+  all_samples <- rbind(samples$alpha[, s,],theta_mu, beta, eta, sig_err, psi, lambda)
+  mu_tilde <- rowMeans(all_samples)
+  var_tilde <- cov(t(all_samples))
+  condmvn <- condMVN(mean = mu_tilde, sigma = var_tilde,
+                     dependent.ind = 1:n_pars, given.ind = (n_pars + 1):length(mu_tilde),
+                     X.given = c(theta_mu[,iteration],
+                                 samples$theta_eta[s,,iteration],
+                                 as.numeric(samples$beta_untransf[,,iteration]),
+                                 log(diag(samples$theta_sig_err_inv[,, iteration])),
+                                 log(apply(samples$theta_psi_inv[,,iteration, drop = F], 3, diag)),
+                                 unwind_lambda(samples$lambda_untransf[,, iteration], samples$constraintMat, samples$n_factors)))
+  return(list(eff_mu = condmvn$condMean, eff_var = condmvn$condVar))
+}
+
+unwind_lambda <- function(lambda, constraintMat, n_factors, reverse = F){
+  if(reverse){
+    out <- matrix(0, n_randeffect, n_factors)
+    out[constraintMat] <- lambda
+  } else{
+    out <- as.numeric(lambda[constraintMat])
+  }
+  return(out)
+}
+
+filtered_samples_factorRegr <- function(sampler, filter){
+  out <- list(
+    theta_mu = sampler$samples$theta_mu[, filter],
+    lambda_untransf = sampler$samples$lambda_untransf[, , filter, drop = F],
+    theta_psi_inv = sampler$samples$theta_psi_inv[, , filter, drop = F],
+    theta_sig_err_inv = sampler$samples$theta_sig_err_inv[, , filter],
+    theta_eta = sampler$samples$theta_eta[, , filter, drop = F],
+    beta_untransf = sampler$samples$beta_untransf[, , filter, drop = F],
+    theta_var = sampler$samples$theta_var[,,filter],
+    alpha = sampler$samples$alpha[, , filter],
+    constraintMat = attributes(sampler)$constraintMat,
+    n_factors = sampler$n_factors,
+    n_covariates = sampler$n_covariates,
+    iteration = length(filter)
+  )
+}
+
 variant_funs <- list(
   sample_store = sample_store_factorRegr,
   add_info = add_info_factorRegr,
@@ -145,7 +194,7 @@ variant_funs <- list(
   fill_samples = fill_samples_factorRegr,
   gibbs_step = gibbs_step_factorRegr,
   get_group_level = get_group_level_standard,
-  get_conditionals = get_conditionals_standard,
-  filtered_samples = filtered_samples_standard
+  get_conditionals = get_conditionals_factorRegr,
+  filtered_samples = filtered_samples_factorRegr
 )
 

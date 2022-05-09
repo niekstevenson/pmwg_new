@@ -386,7 +386,7 @@ filter_obj <- function(obj, idx){
   dim_names <- dimnames(obj)
   if(is.null(dims)) return(obj)
   if(length(dims) == 2){
-    if(isSymmetric(obj)) return(obj) #Don't extend priors and theta_mu_var_inv
+    if(isSymmetric(round(obj, 5))) return(obj) #Don't extend priors and theta_mu_var_inv
   } 
   obj <- obj[slice.index(obj, length(dims)) %in% idx]
   dims[length(dims)] <- length(idx)
