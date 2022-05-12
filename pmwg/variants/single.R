@@ -44,7 +44,6 @@ sample_store <- function(par_names, subject_ids, iters = 1, stage = "init", ...)
     epsilon = array(NA_real_,dim = c(n_subjects, iters),dimnames = list(subject_ids, NULL)),
     origin = array(NA_real_,dim = c(n_subjects, iters),dimnames = list(subject_ids, NULL)),
     alpha = array(NA_real_,dim = c(n_pars, n_subjects, iters),dimnames = list(par_names, subject_ids, NULL)),
-    sum_samples = array(NA_real_,dim = c(n_pars, n_subjects),dimnames = list(par_names, subject_ids)),
     stage = array(stage, iters),
     subj_ll = array(NA_real_,dim = c(n_subjects, iters),dimnames = list(subject_ids, NULL))
   )
@@ -68,7 +67,6 @@ init <- function(pmwgs, start_mu = NULL, start_var = NULL,
   proposals <- simplify2array(proposals)
   pmwgs$init <- TRUE
   pmwgs$samples$alpha[, , 1] <- do.call(cbind, proposals[1,])
-  pmwgs$samples$sum_samples <- do.call(cbind, proposals[1,])
   pmwgs$samples$subj_ll[, 1] <- unlist(proposals[2,])
   pmwgs$samples$origin[,1] <- 2
   pmwgs$samples$idx <- 1
@@ -186,20 +184,14 @@ run_stage <- function(pmwgs,
     
     mean_samples <- matrix(pmwgs$samples$alpha[,,j-1], nrow = n_pars, ncol = n_subjects)
     rownames(mean_samples) <- pmwgs$par_names
-    if(n_cores > 1){
-      proposals=mclapply(X=1:pmwgs$n_subjects,FUN = new_particle_single, data, particles, prior_mu, prior_var,
-                         mean_samples, eff_mu, eff_var, mix, pmwgs$ll_func, epsilon, subjects, mc.cores = n_cores)
-    } else{
-      proposals=lapply(X=1:pmwgs$n_subjects,FUN = new_particle_single, data, particles, prior_mu, prior_var,
+    proposals=lapply(X=1:pmwgs$n_subjects,FUN = new_particle_single, data, particles, prior_mu, prior_var,
                        mean_samples, eff_mu, eff_var, mix, pmwgs$ll_func, epsilon, subjects)
-    }
     proposals <- array(unlist(proposals), dim = c(pmwgs$n_pars + 2, pmwgs$n_subjects))
     alpha <- matrix(proposals[1:n_pars,], nrow = n_pars, ncol = n_subjects)
     ll <- proposals[n_pars + 1,]
     origin <- proposals[n_pars + 2,]
     
     pmwgs$samples$alpha[, , j] <- alpha
-    pmwgs$samples$sum_samples <- pmwgs$samples$sum_samples + alpha
     pmwgs$samples$idx <- j
     pmwgs$samples$subj_ll[, j] <- ll
     pmwgs$samples$origin[,j] <- origin
@@ -212,22 +204,6 @@ run_stage <- function(pmwgs,
     }
     
     pmwgs$samples$epsilon[,j] <- epsilon
-
-    # if(j > n_window & !is.null(n_window)){
-    #   pmwgs$samples$sum_samples <- pmwgs$samples$sum_samples - pmwgs$samples$alpha[,,(j-n_window)]
-    # }
-
-    # if(j > n_window & !is.null(n_window)){
-    #   pmwgs$samples$sum_samples <- pmwgs$samples$sum_samples - pmwgs$samples$alpha[,,(j-n_window)]
-    # }
-    # 
-    # # Yes I go through all this trouble to avoid recalculating the mean
-    # mean_samples <- pmwgs$samples$sum_samples/n_window
-    # # Improve writing on this later
-    # difference <- aperm(sweep(pmwgs$samples$alpha[,,1:pmwgs$samples$idx], c(1,2), mean_samples), c(1, 3, 2))
-    # for(i in 1:n_subjects){
-    #   var_samples[,,i] <- difference[,,i] %*% t(difference[,,i])/(n_window-1)
-    # }
   }
   if (verbose) close(pb)
   return(pmwgs)

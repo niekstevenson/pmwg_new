@@ -30,6 +30,8 @@ get_all_pars_standard <- function(samples, filter, info){
   }
   X <- cbind(t(theta_mu),t(theta_var.unwound),t(a_half))
   info$n_params <- n_params
+  info$given.ind <- (info$n_randeffect+1):n_params
+  info$X.given_ind <- 1:(n_params-info$n_randeffect)
   return(list(X = X, mu_tilde = mu_tilde, var_tilde = var_tilde, info = info))
 }
 
@@ -55,6 +57,9 @@ robust_diwish = function (W, v, S) { #RJI_change: this function is to protect ag
   exptrace <- sum(S * invW)
   lnum <- v * halflogdetS - (v + p + 1) * halflogdetW - 0.5 * exptrace
   lpdf <- lnum - ldenom
+  out <- exp(lpdf)
+  if(!is.finite(out)) return(1e-100)
+  if(out < 1e-10) return(1e-100)
   return(exp(lpdf))
 }
 
@@ -83,7 +88,7 @@ group_dist_standard = function(random_effect = NULL, parameters, sample = FALSE,
   if (sample){
     return(mvtnorm::rmvnorm(n_samples, param.theta.mu,param.theta.sig2))
   }else{
-    logw_second<-mvtnorm::dmvnorm(random_effect, param.theta.mu,param.theta.sig2,log=TRUE)
+    logw_second<-max(-5000*info$n_randeffect, mvtnorm::dmvnorm(random_effect, param.theta.mu,param.theta.sig2,log=TRUE))
     return(logw_second)
   }
 }
@@ -98,11 +103,19 @@ prior_dist_standard = function(parameters, info){
   param.a <- exp(parameters[((length(parameters)-n_randeffect)+1):(length(parameters))])
   log_prior_mu=mvtnorm::dmvnorm(param.theta.mu, mean = prior$theta_mu_mean, sigma = prior$theta_mu_var, log =TRUE)
   log_prior_sigma = log(robust_diwish(param.theta.sig2, v=hyper$v_half+ n_randeffect-1, S = 2*hyper$v_half*diag(1/param.a))) 
-  log_prior_a = sum(invgamma::dinvgamma(param.a,scale = 0.5,shape=1/(hyper$A_half^2),log=TRUE))
+  log_prior_a = sum(logdinvGamma(param.a,shape = 1/2,rate=1/(hyper$A_half^2)))
   # These are Jacobian corrections for the transformations on these
   logw_den2 <- -sum(log(param.a))
   logw_den3 <- -(log(2^n_randeffect)+sum((n_randeffect:1+1)*log(diag(param.theta.sig2)))) 
   return(log_prior_mu + log_prior_sigma + log_prior_a - logw_den3 - logw_den2)
+}
+
+logdinvGamma <- function(x, shape, rate){
+  alpha <- shape
+  beta <- 1/rate
+  log.density <- alpha * log(beta) - lgamma(alpha) - (alpha + 
+                                                        1) * log(x) - (beta/x)
+  return(pmax(log.density, -50)) #Roughly equal to 1e-22 on real scale
 }
 
 variant_funs <- list(

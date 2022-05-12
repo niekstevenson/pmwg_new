@@ -11,31 +11,34 @@ library(corpcor) #RJI_change: not sure if this was included before
 #library(matrixcalc)
 
 
-IS2 <- function(samples, filter, IS_samples = 1000, n_particles = 250, n_cores = 1, df = 3){
+IS2 <- function(samples, filter, IS_samples = 5000, n_particles = 250, n_cores = 1, df = 3){
   ###### set up variables #####
   info <- add_info_base(samples)
   all_pars <- variant_funs$get_all_pars(samples, filter, info)
   muX<-apply(all_pars$X,2,mean)
   varX<-cov(all_pars$X)
-
+  
   prop_theta=mvtnorm::rmvt(IS_samples,sigma = varX, df=df, delta=muX)
-
+  # out <- numeric(nrow(prop_theta))
+  # for(i in 1:nrow(prop_theta)){
+  #   out[i] <- variant_funs$prior_dist(parameters = prop_theta[i,], all_pars$info)
+  # }
   #do the sampling
   logw_num <- mclapply(X=1:IS_samples, 
-                  FUN = compute_lw_num, 
-                  prop_theta = prop_theta,
-                  n_particles = n_particles,
-                  mu_tilde=all_pars$mu_tilde,
-                  var_tilde = all_pars$var_tilde, 
-                  info = all_pars$info,
-                  mc.cores = n_cores)
+                       FUN = compute_lw_num, 
+                       prop_theta = prop_theta,
+                       n_particles = n_particles,
+                       mu_tilde=all_pars$mu_tilde,
+                       var_tilde = all_pars$var_tilde, 
+                       info = all_pars$info,
+                       mc.cores = n_cores)
   logw_den <- mvtnorm::dmvt(prop_theta, delta=muX, sigma=varX,df=df, log = TRUE)
   
   finished <- unlist(logw_num) - logw_den
   max.lw <- max(finished)
   mean.centred.lw <- mean(exp(finished-max.lw)) #takes off the max and gets mean (avoids infs)
   lw <- log(mean.centred.lw)+max.lw #puts max back on to get the lw
-  lw
+  return(list(lw = lw, finished = finished, logw_num = logw_num, logw_den = logw_den))
 }
 
 get_logp=function(prop_theta,n_particles,mu_tilde,var_tilde, info){
@@ -47,7 +50,7 @@ get_logp=function(prop_theta,n_particles,mu_tilde,var_tilde, info){
   data <- info$data
   # make an array for the density
   logp <- array(dim=c(n_particles,n_subjects))
-
+  
   # for each subject, get 1000 IS samples (particles) and find log weight of each
   for (j in 1:n_subjects){
     # generate the particles from the conditional MVnorm AND mix of group level proposals
@@ -59,14 +62,14 @@ get_logp=function(prop_theta,n_particles,mu_tilde,var_tilde, info){
     # do conditional MVnorm based on the proposal distribution
     conditional = condMVNorm::condMVN(mean=mu_tilde[j,],sigma=var_tilde[j,,],
                                       dependent.ind=c(1:n_randeffect),
-                                      given.ind=c((n_randeffect+1):n_params),
-                                      X.given=prop_theta[c(1:(n_params-n_randeffect))],
+                                      given.ind=info$given.ind,
+                                      X.given=prop_theta[info$X.given_ind],
                                       check.sigma = F)
     # Subject specific efficient distribution
     particles1 <- mvtnorm::rmvnorm(n1, conditional$condMean,conditional$condVar)
     # Group level
     particles2 <- variant_funs$group_dist(n_samples=n2, parameters = prop_theta,
-                             sample=TRUE, info = info)
+                                          sample=TRUE, info = info)
     particles <- rbind(particles1,particles2)
     # names for ll function to work
     colnames(particles) <- info$par_names
@@ -75,11 +78,9 @@ get_logp=function(prop_theta,n_particles,mu_tilde,var_tilde, info){
     # below gets second part of equation 5 numerator ie density under prop_theta
     lw_second <- apply(particles, 1, variant_funs$group_dist, prop_theta, FALSE, NULL, info)
     # below is the denominator - ie mix of density under conditional and density under pro_theta
-    lw_third <- log(wmix*dmvnorm(particles, conditional$condMean, conditional$condVar) + (1-wmix) * exp(lw_second)) 
+    lw_third <- log(wmix*pmax(1e-25 * n_randeffect, dmvnorm(particles, conditional$condMean, conditional$condVar)) + (1-wmix) * exp(lw_second)) 
     # does equation 5
-    logw=lw_first+lw_second-lw_third
-    logw[!is.numeric(logw)] <- 1e-10
-    logp[,j]=logw
+    logp[,j]=lw_first+lw_second-lw_third
   }
   # we use this part to centre the logw before adding back on at the end. This avoids inf and -inf values
   # Niek has some doubts about whether this is correct
@@ -89,11 +90,7 @@ get_logp=function(prop_theta,n_particles,mu_tilde,var_tilde, info){
   subj_logp = log(apply(w,2,mean))+sub_max #means
   
   # sum the logp and return 
-  if(is.nan(sum(subj_logp))){ 
-    return(1e-10)
-  }else{
-    return(sum(subj_logp))
-  }
+  return(sum(subj_logp))
 }
 
 compute_lw_num=function(i, prop_theta,n_particles,mu_tilde,var_tilde,info){
@@ -106,6 +103,7 @@ add_info_base <- function(samples){
   info <- list(
     n_randeffect = samples$n_pars,
     n_subjects = samples$n_subjects,
+    par_names = samples$par_names,
     data = samples$data,
     ll_func = samples$ll_func,
     prior = samples$prior,

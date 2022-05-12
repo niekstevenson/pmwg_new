@@ -20,7 +20,7 @@ log_likelihood=function(x,data, sample=F) {
 }
 
 n.trials = 75       #number trials per subject per conditions
-n.subj = 25          #number of subjects
+n.subj = 20          #number of subjects
 n.cond = 3          #number of conditions
 
 
@@ -71,6 +71,6 @@ sampler <- pmwgs(
 sampler <- init(sampler, n_cores = 15) # i don't use any start points here
 
 # Sample! -------------------------------------------------------------------
-burned <- run_stage(sampler, stage = "burn",iter = 1000, particles = 100, n_cores = 15, pstar = .7)
+burned <- run_stage(sampler, stage = "burn",iter = 1000, particles = 100, n_cores = 8, pstar = .7)
 adapted <- run_stage(burned, stage = "adapt", iter = 1000, particles = 100, n_cores = 15, pstar =.7)
 sampled <- run_stage(adapted, stage = "sample", iter = 1000, particles = 100, n_cores = 15, pstar = .7)
