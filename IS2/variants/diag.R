@@ -1,4 +1,4 @@
-source("IS2/IS2.R")
+source("IS2/variants/standard.R")
 
 unwind <- function(x,reverse=FALSE, diag = TRUE) {
   if (reverse) {
