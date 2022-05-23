@@ -3,7 +3,7 @@ source("IS2/variants/standard.R")
 unwind <- function(x,reverse=FALSE, diag = TRUE) {
   if (reverse) {
     if(diag){
-      out <- diag(exp(x), nrow = lenght(x))
+      out <- diag(exp(x), nrow = length(x))
     } else{
       out <- exp(x)
     }
@@ -35,7 +35,7 @@ prior_dist_diag = function(parameters, info){
   param.theta.sig2 <- unwind(param.theta.sig.unwound, reverse = TRUE, diag = FALSE)
   param.a <- exp(parameters[((length(parameters)-n_randeffect)+1):(length(parameters))])
   log_prior_mu=mvtnorm::dmvnorm(param.theta.mu, mean = prior$theta_mu_mean, sigma = prior$theta_mu_var, log =TRUE)
-  log_prior_sigma = sum(logdinvGamma(param.theta.sig2, shape = hyper$v_half/2, rate = hyper$v_half/param.a, log = T))
+  log_prior_sigma = sum(logdinvGamma(param.theta.sig2, shape = hyper$v_half/2, rate = hyper$v_half/param.a))
   log_prior_a = sum(logdinvGamma(param.a,shape = 1/2,rate=1/(hyper$A_half^2)))
   # These are Jacobian corrections for the transformations on these
   logw_den2 <- -sum(log(param.a))
