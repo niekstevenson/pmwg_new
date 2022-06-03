@@ -126,7 +126,7 @@ get_conditionals_diag_groups <- function(s, samples, n_pars){
   iteration <- samples$iteration
   pts2_unwound <- log(apply(samples$theta_var,3,diag))
   all_samples <- rbind(samples$alpha[, s,],samples$theta_mu[,groups[s],],pts2_unwound)
-  mu_tilde <- apply(all_samples, 1, mean)
+  mu_tilde <- rowMeans(all_samples)
   var_tilde <- stats::var(t(all_samples))
   condmvn <- condMVNorm::condMVN(mean = mu_tilde, sigma = var_tilde,
                                  dependent.ind = 1:n_pars, given.ind = (n_pars + 1):length(mu_tilde),

@@ -28,7 +28,7 @@ get_conditionals_diag <- function(s, samples, n_pars){
   iteration <- samples$iteration
   pts2_unwound <- log(apply(samples$theta_var,3,diag))
   all_samples <- rbind(samples$alpha[, s,],samples$theta_mu,pts2_unwound)
-  mu_tilde <- apply(all_samples, 1, mean)
+  mu_tilde <- rowMeans(all_samples)
   var_tilde <- var(t(all_samples))
   condmvn <- condMVN(mean = mu_tilde, sigma = var_tilde,
                      dependent.ind = 1:n_pars, given.ind = (n_pars + 1):length(mu_tilde),
