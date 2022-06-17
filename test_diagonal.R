@@ -4,7 +4,7 @@ rm(list = ls())
 setwd("~/Documents/UVA/2022/pmwg_new")
 
 library(rtdists)
-source("pmwg/variants/standard.R")
+source("pmwg/variants/diag.R")
 
 log_likelihood=function(x,data, sample=F) {
   x <- exp(x)
@@ -61,7 +61,7 @@ pars <- rownames(subj_random_effects)
 
 priors <- list(
   theta_mu_mean = rep(0, length(pars)),
-  theta_mu_var = diag(rep(1, length(pars)))
+  theta_mu_var = rep(1, length(pars))
 )
 
 sampler <- pmwgs(
@@ -74,6 +74,6 @@ sampler <- init(sampler, n_cores = 8)
 
 
 # Sample! -------------------------------------------------------------------
-microbenchmark::microbenchmark(run_stage(sampler, stage = "burn", iter = 50, pstar = .7, n_cores = 8, particles = 100), times = 3)
+burned <- run_stage(sampler, stage = "burn", iter = 50, pstar = .7, n_cores = 8, particles = 100)
 adapted <- run_stage(burned, stage = "adapt", iter = 1000, particles = 100, n_cores = 15, pstar =.7)
 sampled <- run_stage(adapted, stage = "sample", iter = 1000, particles = 100, n_cores = 15, pstar = .7)
