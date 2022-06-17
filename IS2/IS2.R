@@ -11,7 +11,7 @@ library(corpcor) #RJI_change: not sure if this was included before
 #library(matrixcalc)
 
 
-IS2 <- function(samples, filter, IS_samples = 500, n_particles = 100, n_cores = 1, df = 3){
+IS2 <- function(samples, filter, IS_samples = 5000, n_particles = 500, n_cores = 1, df = 5){
   ###### set up variables #####
   info <- add_info_base(samples)
   all_pars <- variant_funs$get_all_pars(samples, filter, info)
@@ -83,7 +83,7 @@ get_logp=function(prop_theta,n_particles,mu_tilde,var_tilde, info){
                                       given.ind=info$given.ind,
                                       X.given=prop_theta[info$X.given_ind],
                                       check.sigma = F)
-    while((var_z_sub > var_opt_sub*2) & n_total < 10000){
+    while((var_z_sub > var_opt_sub) | n_total < 5000){
       n_total <- n_total + n_particles
       lw_tmp <- get_sub_weights(n_particles = n_particles, condMean = conditional$condMean,
                             condVar = conditional$condVar, prop_theta = prop_theta,

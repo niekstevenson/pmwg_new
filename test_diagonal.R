@@ -1,8 +1,10 @@
 #Script for recovering a diagonal only estimation
 
 rm(list = ls())
+setwd("~/Documents/UVA/2022/pmwg_new")
+
 library(rtdists)
-source("pmwg/variants/diag.R")
+source("pmwg/variants/standard.R")
 
 log_likelihood=function(x,data, sample=F) {
   x <- exp(x)
@@ -59,18 +61,19 @@ pars <- rownames(subj_random_effects)
 
 priors <- list(
   theta_mu_mean = rep(0, length(pars)),
-  theta_mu_var = rep(1, length(pars))
+  theta_mu_var = diag(rep(1, length(pars)))
 )
 
 sampler <- pmwgs(
-  data = data,
+  data = pmwg::forstmann,
   pars = pars,
   prior = priors,
   ll_func = log_likelihood
 )
-sampler <- init(sampler, n_cores = 15) # i don't use any start points here
+sampler <- init(sampler, n_cores = 8)
+
 
 # Sample! -------------------------------------------------------------------
-burned <- run_stage(sampler, stage = "burn",iter = 1000, particles = 100, n_cores = 8, pstar = .7)
+microbenchmark::microbenchmark(run_stage(sampler, stage = "burn", iter = 50, pstar = .7, n_cores = 8, particles = 100), times = 3)
 adapted <- run_stage(burned, stage = "adapt", iter = 1000, particles = 100, n_cores = 15, pstar =.7)
 sampled <- run_stage(adapted, stage = "sample", iter = 1000, particles = 100, n_cores = 15, pstar = .7)

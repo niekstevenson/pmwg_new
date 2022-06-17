@@ -1,18 +1,16 @@
 #Script for recovering a typical experiment 
 
 rm(list = ls())
-source("pmwg/variants/factor.R")
+source("pmwg/variants/standard.R")
 
 library(rtdists)
 
 log_likelihood=function(x,data, sample=F) {
   x <- exp(x)
-  bPars <- grep("b", names(x))
-  bs <- x["A"]+x[bPars][data$condition]
   if (sample) { #for sampling
-    out=rLBA(n=nrow(data),A=x["A"],b=bs,t0=x["t0"],mean_v=x[c("v1","v2")],sd_v=c(1,1),distribution="norm",silent=TRUE)
+    out=rdiffusion(n=nrow(data),a=x["a"],v=x["v"],t0=x["t0"],z = x["z"],sz = x["sz"], sv = x["sv"], st0 = x["st0"], s = 1)
   } else { #for calculating density
-    out=dLBA(rt=data$rt,response=data$resp,A=x["A"],b=bs,t0=x["t0"],mean_v=x[c("v1","v2")],sd_v=c(1,1),distribution="norm",silent=TRUE)
+    out=ddiffusion(rt=data$rt,response=data$resp,a=x["a"],v=x["v"],t0=x["t0"],z = x["z"],sz = x["sz"], sv = x["sv"], st0 = x["st0"], s=1)
     bad=(out<1e-10)|(!is.finite(out))
     out[bad]=1e-10
     out=sum(log(out))
@@ -20,23 +18,23 @@ log_likelihood=function(x,data, sample=F) {
   out
 }
 
-n.trials = 70       #number trials per subject per conditions
-n.subj = 20          #number of subjects
-n.cond = 3          #number of conditions
+n.trials = 500       #number trials per subject per conditions
+n.subj = 30          #number of subjects
+n.cond = 1          #number of conditions
 
 
 names=c("subject","rt","resp","condition") #names of columns
 data = data.frame(matrix(NA, ncol = length(names), nrow = (n.trials*n.subj*n.cond))) #empty data frame
 names(data)=names
-data$condition = rep(1:n.cond,times = n.trials) #filling in condition
+#data$condition = rep(1:n.cond,times = n.trials) #filling in condition
 data$subject = rep(1:n.subj, each = n.trials*n.cond) #filling in subjects
 
-parameter.names=c("b1","b2","b3", "A","v1","v2","t0")
+parameter.names=c("a", "v", "t0", "z", "sv", "st0", "sz")
 n.parameters=length(parameter.names)
 
 ptm <- array(dim = n.parameters, dimnames = list(parameter.names)) #an empty array where i will put parameter values
 
-ptm[1:n.parameters]=c(0.1,0.3,0.5,0.4,1.2,0.3,-2.4)
+ptm[1:n.parameters]=c(0.1, 1, -2, -0.8, 0.5, -2, -1.2)
 exp(ptm)
 vars = abs(ptm)/10 #off diagonal correlations are done as absolute/10
 
@@ -70,10 +68,9 @@ priors <- list(
 )
 
 sampler <- pmwgs(
-  data = data,
+  data = pmwg::forstmann,
   pars = pars,
-  ll_func = log_likelihood,
-  n_factors = 2
+  ll_func = log_likelihood
 )
 
 n_cores = 10
