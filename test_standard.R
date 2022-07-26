@@ -76,6 +76,8 @@ sampler <- pmwgs(
 n_cores = 10
 
 sampler <- init(sampler, n_cores = n_cores) # i don't use any start points here
+source("pmwg/variants/standard.R")
+
 burned <- run_stage(sampler, stage = "burn",iter = 500, particles = 100, n_cores = n_cores, pstar = .7)
 adapted <- run_stage(burned, stage = "adapt", iter = 1000, particles = 100, n_cores = n_cores, pstar =.7)
 debug(variant_funs$get_conditionals)

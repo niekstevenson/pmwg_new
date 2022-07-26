@@ -83,7 +83,7 @@ get_logp=function(prop_theta,n_particles,mu_tilde,var_tilde, info){
                                       given.ind=info$given.ind,
                                       X.given=prop_theta[info$X.given_ind],
                                       check.sigma = F)
-    while((var_z_sub > var_opt_sub) | n_total < 5000){
+    while((var_z_sub > var_opt_sub) & n_total < 5000){
       n_total <- n_total + n_particles
       lw_tmp <- get_sub_weights(n_particles = n_particles, condMean = conditional$condMean,
                             condVar = conditional$condVar, prop_theta = prop_theta,

@@ -41,12 +41,12 @@ sampler <- pmwgs(
 n_cores <- 8
 
 # start the sampler ---------------------------------------------------------
-# sampler <- init(sampler, n_cores = n_cores) # i don't use any start points here
+sampler <- init(sampler, n_cores = n_cores) # i don't use any start points here
 
 # Sample! -------------------------------------------------------------------
-# burned <- run_stage(sampler, stage = "burn",iter = 500, particles = 150, n_cores = n_cores , pstar = .6)
-# save(burned, file = paste0("samples/factor_", n_factors, "F_", n_subjects, "S_", n_pars, "P_FactRecovery_burned.RData"))
-load("~/Documents/UVA/2022/pmwg_new/samples/factor_2F_20S_15P_FactRecovery_burned.RData")
+debug(variant_funs$gibbs_step)
+burned <- run_stage(sampler, stage = "burn",iter = 500, particles = 150, n_cores = n_cores , pstar = .6)
+save(burned, file = paste0("samples/factor_", n_factors, "F_", n_subjects, "S_", n_pars, "P_FactRecovery_burned.RData"))
 adapted <- run_stage(burned, stage = "adapt",iter = 1500, particles = 100, n_cores = n_cores, pstar = .6, min_unique = 200, n_cores_conditional = n_cores)
 sampled <- run_stage(adapted, stage = "sample",iter = 100, particles = 100, n_cores = n_cores, pstar = .6, n_cores_conditional = n_cores)
 sampled <- run_stage(sampled, stage = "sample",iter = 700, particles = 100, n_cores = n_cores, pstar = .6, n_cores_conditional = n_cores)

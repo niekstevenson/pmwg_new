@@ -34,7 +34,7 @@ prior_dist_diag = function(parameters, info){
   param.theta.sig.unwound <- parameters[(n_randeffect+1):(length(parameters)-n_randeffect)]
   param.theta.sig2 <- unwind(param.theta.sig.unwound, reverse = TRUE, diag = FALSE)
   param.a <- exp(parameters[((length(parameters)-n_randeffect)+1):(length(parameters))])
-  log_prior_mu=mvtnorm::dmvnorm(param.theta.mu, mean = prior$theta_mu_mean, sigma = prior$theta_mu_var, log =TRUE)
+  log_prior_mu=mvtnorm::dmvnorm(param.theta.mu, mean = prior$theta_mu_mean, sigma = diag(prior$theta_mu_var), log =TRUE)
   log_prior_sigma = sum(logdinvGamma(param.theta.sig2, shape = hyper$v_half/2, rate = hyper$v_half/param.a))
   log_prior_a = sum(logdinvGamma(param.a,shape = 1/2,rate=1/(hyper$A_half^2)))
   # These are Jacobian corrections for the transformations on these

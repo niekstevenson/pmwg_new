@@ -32,7 +32,7 @@ log_likelihood=function(x,data, sample=TRUE) {
 }
 
 
-n.trials <- 100      #number trials per subject per conditions
+n.trials <- 50      #number trials per subject per conditions
 n.subj <- 25 #number of subjects
 n.cond <- 3
 n.exp <- 2
@@ -121,7 +121,7 @@ sampler <- pmwgs(
 sampler <- init(sampler, n_cores = 12) # i don't use any start points here
 
 # Sample! -------------------------------------------------------------------
-burned <- run_stage(sampler, stage = "burn",iter = 2000, particles = 100, n_cores =12, pstar = .6)
-adapted <- run_stage(burned, stage = "adapt", iter = 5000, particles = 100, n_cores = 12, pstar = .6)
-sampled <- run_stage(adapted, stage = "sample", iter = 1000, particles = 100, n_cores = 12, pstar = .6)
+burned <- run_stage(burned, stage = "burn",iter = 250, particles = 100, n_cores =10, pstar = .6, components = c(7, 14))
+adapted <- run_stage(burned, stage = "adapt", iter = 5000, particles = 100, n_cores = 10, pstar = .6)
+sampled <- run_stage(adapted, stage = "sample", iter = 1000, particles = 100, n_cores = 10, pstar = .6)
 

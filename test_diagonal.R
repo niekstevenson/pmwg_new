@@ -74,6 +74,6 @@ sampler <- init(sampler, n_cores = 8)
 
 
 # Sample! -------------------------------------------------------------------
-burned <- run_stage(sampler, stage = "burn", iter = 50, pstar = .7, n_cores = 8, particles = 100)
+burned <- run_stage(sampler, stage = "burn", iter = 250, pstar = .7, n_cores = 8, particles = 100)
 adapted <- run_stage(burned, stage = "adapt", iter = 1000, particles = 100, n_cores = 15, pstar =.7)
 sampled <- run_stage(adapted, stage = "sample", iter = 1000, particles = 100, n_cores = 15, pstar = .7)
