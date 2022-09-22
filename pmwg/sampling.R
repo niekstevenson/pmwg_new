@@ -93,7 +93,7 @@ new_particle <- function (s, data, num_particles, parameters, eff_mu = NULL,
     colnames(proposals) <- names(subj_mu)
     proposals[1, ] <- subj_mu
     if(n_components > 1){
-      lw <- apply(proposals, 1, likelihood_func, data = data[data$subject==subjects[s],],component = i)
+      lw <- apply(proposals, 1, likelihood_func, data = data[data$subject==subjects[s],])
     } else{
       lw <- apply(proposals, 1, likelihood_func, data = data[data$subject==subjects[s],])
     }
